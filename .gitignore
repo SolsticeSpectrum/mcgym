@@ -1,0 +1,23 @@
+# Nested repo (the gym has its own git history)
+minecraft-decomp/
+
+# Reference clones (large, external)
+reference/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Training artifacts
+checkpoints/
+runs/
+wandb/
+*.onnx
+*.pt
+
+# Schema generated code
+schema/codegen/_generated/
