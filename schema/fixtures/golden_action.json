@@ -1,0 +1,15 @@
+{
+  "forward": 1.0,
+  "strafe": 0.0,
+  "jump": 0,
+  "sneak": 0,
+  "sprint": 1,
+  "yaw_delta": 3.0,
+  "pitch_delta": -1.0,
+  "attack": 1,
+  "use": 0,
+  "selected_slot": 4,
+  "inv_op_type": 0,
+  "inv_slot_a": 0,
+  "inv_slot_b": 0
+}
