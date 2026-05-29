@@ -1,0 +1,48 @@
+schema_version: 0
+
+params:
+  voxel_radius: 8          # voxel edge = 2*r+1 = 17, cells = 4913
+  max_entities: 16
+  inventory_slots: 41      # 36 main + 4 armor + 1 offhand
+  hidden_block_id: -1      # legit-mode sentinel for enclosed blocks
+
+observation:
+  - {name: schema_version, dtype: i32}
+  - {name: tick, dtype: i64}
+  - {name: agent_id, dtype: i32}
+  - {name: pos, dtype: f32, shape: [3]}
+  - {name: vel, dtype: f32, shape: [3]}
+  - {name: yaw, dtype: f32}
+  - {name: pitch, dtype: f32}
+  - {name: on_ground, dtype: u8}
+  - {name: health, dtype: f32}
+  - {name: food, dtype: f32}
+  - {name: selected_slot, dtype: u8}
+  - {name: voxel_blocks, dtype: i32, shape: [4913]}
+  - {name: target_block, dtype: i32}
+  - {name: target_face, dtype: u8}
+  - {name: target_distance, dtype: f32}
+  - {name: target_in_range, dtype: u8}
+  - {name: entity_type_id, dtype: i32, shape: [16]}
+  - {name: entity_rel_pos, dtype: f32, shape: [16, 3]}
+  - {name: entity_vel, dtype: f32, shape: [16, 3]}
+  - {name: entity_yaw, dtype: f32, shape: [16]}
+  - {name: entity_health, dtype: f32, shape: [16]}
+  - {name: entity_flags, dtype: u8, shape: [16]}
+  - {name: inv_item_id, dtype: i32, shape: [41]}
+  - {name: inv_count, dtype: u8, shape: [41]}
+
+action:
+  - {name: forward, dtype: f32}
+  - {name: strafe, dtype: f32}
+  - {name: jump, dtype: u8}
+  - {name: sneak, dtype: u8}
+  - {name: sprint, dtype: u8}
+  - {name: yaw_delta, dtype: f32}
+  - {name: pitch_delta, dtype: f32}
+  - {name: attack, dtype: u8}
+  - {name: use, dtype: u8}
+  - {name: selected_slot, dtype: u8}
+  - {name: inv_op_type, dtype: u8}
+  - {name: inv_slot_a, dtype: i16}
+  - {name: inv_slot_b, dtype: i16}
