@@ -1,1 +1,1 @@
-from . import codec, spec  # noqa: F401
+from . import codec, golden, spec  # noqa: F401

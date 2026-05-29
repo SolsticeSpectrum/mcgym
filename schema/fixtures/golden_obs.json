@@ -1,0 +1,25 @@
+{
+  "schema_version": 0,
+  "tick": 7,
+  "agent_id": 1,
+  "pos": [
+    10.5,
+    80.0,
+    -3.25
+  ],
+  "vel": [
+    0.1,
+    -0.05,
+    0.2
+  ],
+  "yaw": 45.0,
+  "pitch": -10.0,
+  "on_ground": 1,
+  "health": 20.0,
+  "food": 18.0,
+  "selected_slot": 4,
+  "target_block": 42,
+  "target_face": 2,
+  "target_distance": 2.75,
+  "target_in_range": 1
+}
