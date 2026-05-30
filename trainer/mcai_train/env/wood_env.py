@@ -17,7 +17,7 @@ from mcai_train.models.action_space import actions_to_records
 from mcai_train.schema.registry import Registry
 from mcai_train.tasks.gather_wood import (
     W_DEATH,
-    WoodShapedReward,
+    BatchWoodReward,
     log_block_ids,
     log_item_ids,
     wood_count,
@@ -56,18 +56,14 @@ class WoodEnv:
         )
         self.transport = ShmTransport(self._shm_path, self._sock_path, n_agents)
 
-        self._rewards = [
-            WoodShapedReward(self._log_ids, self._log_block_ids)
-            for _ in range(n_agents)
-        ]
+        self._reward = BatchWoodReward(n_agents, self._log_ids, self._log_block_ids)
         self._step_counter = 0
         # Per-agent: True on the step right after a death frame, so the next step
         # re-inits that agent's reward tracker against its fresh respawn obs.
         self._just_died = np.zeros(n_agents, dtype=bool)
 
     def _reset_reward_state(self, obs_struct: np.ndarray) -> None:
-        for i in range(self.n_agents):
-            self._rewards[i].reset(obs_struct[i])
+        self._reward.reset(obs_struct)
         self._step_counter = 0
         self._just_died[:] = False
 
@@ -86,22 +82,15 @@ class WoodEnv:
         attacked = action_idx[:, 6] == 1
         health = obs_struct["health"]
 
-        reward = np.zeros(self.n_agents, dtype=np.float32)
-        died = np.zeros(self.n_agents, dtype=bool)
-        for i in range(self.n_agents):
-            if self._just_died[i]:
-                # First frame of the fresh episode after the gym auto-revived it:
-                # re-init the tracker against the respawn obs, no reward this step.
-                self._rewards[i].reset(obs_struct[i])
-                self._just_died[i] = False
-            elif health[i] <= 0.0:
-                # Death frame: big penalty, terminal. The gym revives this agent
-                # before the next step (per-agent auto-reset).
-                reward[i] = -W_DEATH
-                self._just_died[i] = True
-                died[i] = True
-            else:
-                reward[i] = self._rewards[i].compute(obs_struct[i], bool(attacked[i]))
+        # Vectorised reward over all agents (updates the batch tracker for all).
+        reward = self._reward.compute(obs_struct, attacked)
+        # Agents revived this step (the frame after a death): their cross-episode
+        # delta is spurious, so zero it; the tracker is now re-based on the respawn.
+        reward[self._just_died] = 0.0
+        # Death frame: override with the penalty; the gym revives these next step.
+        died = health <= 0.0
+        reward[died] = -W_DEATH
+        self._just_died = died.copy()
 
         self._step_counter += 1
         timeout = self._step_counter >= self.episode_len

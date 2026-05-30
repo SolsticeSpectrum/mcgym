@@ -185,3 +185,60 @@ class GatherWoodReward:
         delta = current - self._prev
         self._prev = current
         return float(delta)
+
+
+class BatchWoodReward:
+    """Vectorised gather-wood reward over all N agents at once.
+
+    Same shaping as WoodShapedReward but computed with batched numpy on the full
+    (N, ...) obs arrays, replacing the per-agent Python loop (the measured #2 cost
+    in env.step). prev_* are (N,) arrays; compute() returns an (N,) reward.
+    """
+
+    def __init__(self, n_agents: int, log_item_ids_: set[int], log_block_ids_: set[int]) -> None:
+        self.n = n_agents
+        self._item_arr = np.array(sorted(log_item_ids_), dtype=np.int64)
+        self._block_arr = np.array(sorted(log_block_ids_), dtype=np.int64)
+        edge = _EDGE
+        r = (edge - 1) // 2
+        cell = np.empty(edge * edge * edge, dtype=np.float32)
+        for dy in range(-r, r + 1):
+            for dz in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    cell[((dy + r) * edge + (dz + r)) * edge + (dx + r)] = (dx * dx + dy * dy + dz * dz) ** 0.5
+        self._cell_dist = cell
+        self._prev_wood = None
+        self._prev_dist = None
+        self._prev_total = None
+
+    def _wood(self, obs):
+        return (np.isin(obs["inv_item_id"], self._item_arr) * obs["inv_count"]).sum(axis=1).astype(np.float32)
+
+    def _total(self, obs):
+        ct = obs["inv_count"].astype(np.int64)
+        return ((obs["inv_item_id"] != 0) * ct).sum(axis=1).astype(np.float32)
+
+    def _nearest(self, obs):
+        mask = np.isin(obs["voxel_blocks"], self._block_arr)
+        return np.where(mask, self._cell_dist[None, :], NO_LOG_DIST).min(axis=1).astype(np.float32)
+
+    def reset(self, obs) -> None:
+        self._prev_wood = self._wood(obs)
+        self._prev_dist = self._nearest(obs)
+        self._prev_total = self._total(obs)
+
+    def compute(self, obs, attacked) -> np.ndarray:
+        wood = self._wood(obs)
+        dist = self._nearest(obs)
+        total = self._total(obs)
+        r = (
+            W_WOOD * (wood - self._prev_wood)
+            + W_APPROACH * (self._prev_dist - dist)
+            + W_ANYITEM * np.maximum(total - self._prev_total, 0.0)
+        )
+        looking = (obs["target_in_range"] == 1) & np.isin(obs["target_block"], self._block_arr)
+        r = r + W_FACE * looking + W_ATTACK_LOG * (looking & np.asarray(attacked))
+        self._prev_wood = wood
+        self._prev_dist = dist
+        self._prev_total = total
+        return r.astype(np.float32)
