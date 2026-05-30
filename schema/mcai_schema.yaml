@@ -1,7 +1,8 @@
-schema_version: 0
+schema_version: 1
 
 params:
   voxel_radius: 8          # voxel edge = 2*r+1 = 17, cells = 4913
+  voxel_far_stride: 4      # far shell samples every Nth block -> radius 8*4 = 32 blocks
   max_entities: 16
   inventory_slots: 41      # 36 main + 4 armor + 1 offhand
   hidden_block_id: -1      # legit-mode sentinel for enclosed blocks
@@ -19,6 +20,7 @@ observation:
   - {name: food, dtype: f32}
   - {name: selected_slot, dtype: u8}
   - {name: voxel_blocks, dtype: i32, shape: [4913]}
+  - {name: voxel_far, dtype: i32, shape: [4913]}
   - {name: target_block, dtype: i32}
   - {name: target_face, dtype: u8}
   - {name: target_distance, dtype: f32}

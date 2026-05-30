@@ -35,6 +35,7 @@ _DOC = yaml.safe_load(_SCHEMA_PATH.read_text())
 SCHEMA_VERSION = _DOC["schema_version"]
 PARAMS = _DOC["params"]
 VOXEL_EDGE = 2 * PARAMS["voxel_radius"] + 1
+VOXEL_FAR_STRIDE = PARAMS["voxel_far_stride"]
 OBS_DTYPE = _build_dtype(_DOC["observation"])
 ACTION_DTYPE = _build_dtype(_DOC["action"])
 OBS_NBYTES = OBS_DTYPE.itemsize

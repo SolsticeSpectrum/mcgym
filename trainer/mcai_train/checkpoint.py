@@ -96,9 +96,10 @@ def export_onnx(directory, model) -> pathlib.Path | None:
             super().__init__()
             self.m = m
 
-        def forward(self, voxel, scalars, inv_item_id, inv_count):
+        def forward(self, voxel, voxel_far, scalars, inv_item_id, inv_count):
             obs = {
                 "voxel": voxel,
+                "voxel_far": voxel_far,
                 "scalars": scalars,
                 "inv_item_id": inv_item_id,
                 "inv_count": inv_count,
@@ -111,15 +112,17 @@ def export_onnx(directory, model) -> pathlib.Path | None:
             wrapper,
             (
                 tensors["voxel"],
+                tensors["voxel_far"],
                 tensors["scalars"],
                 tensors["inv_item_id"],
                 tensors["inv_count"],
             ),
             str(out),
-            input_names=["voxel", "scalars", "inv_item_id", "inv_count"],
+            input_names=["voxel", "voxel_far", "scalars", "inv_item_id", "inv_count"],
             output_names=["logits", "value"],
             dynamic_axes={
                 "voxel": {0: "batch"},
+                "voxel_far": {0: "batch"},
                 "scalars": {0: "batch"},
                 "inv_item_id": {0: "batch"},
                 "inv_count": {0: "batch"},

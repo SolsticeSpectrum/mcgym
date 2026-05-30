@@ -1,8 +1,11 @@
 """Shared-backbone actor-critic for the gather-wood multi-discrete policy.
 
-The encoder fuses three observation streams:
+The encoder fuses four observation streams:
 
-* a 17x17x17 voxel grid of block ids embedded and run through a small 3D CNN,
+* a 17x17x17 NEAR voxel grid (stride 1, radius 8) of block ids, embedded + 3D CNN,
+* a 17x17x17 FAR voxel grid (stride N, radius 8*N) — a foveated render-distance
+  field sharing the block embedding, through its own 3D CNN, so the policy can see
+  and path toward distant trees/terrain,
 * per-agent scalars (velocity, look angles, health/food, target geometry),
 * the 41-slot inventory of item ids, count-weighted and pooled.
 
@@ -40,6 +43,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     obs = obs_struct_batch
 
     voxel = np.ascontiguousarray(obs["voxel_blocks"]).astype(np.int64)
+    voxel_far = np.ascontiguousarray(obs["voxel_far"]).astype(np.int64)
 
     vel = np.ascontiguousarray(obs["vel"]).astype(np.float32)
     yaw = np.ascontiguousarray(obs["yaw"]).astype(np.float32)
@@ -80,6 +84,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
 
     return {
         "voxel": torch.from_numpy(voxel).to(device),
+        "voxel_far": torch.from_numpy(voxel_far).to(device),
         "scalars": torch.from_numpy(scalars).to(device),
         "inv_item_id": torch.from_numpy(inv_item_id).to(device),
         "inv_count": torch.from_numpy(inv_count).to(device),
@@ -94,20 +99,26 @@ class ObsEncoder(nn.Module):
         self.num_blocks = num_blocks
         self.num_items = num_items
 
-        self.voxel_conv = nn.Sequential(
-            nn.Conv3d(EMBED_DIM, 16, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-        )
-        # 17 -> 9 -> 5 with stride-2 same-padding convs: 5*5*5*32 = 4000.
-        conv_out = 32 * 5 * 5 * 5
+        # Near and far voxel grids each get their own 3D CNN (distinct weights) but
+        # share the block embedding table above. 17 -> 9 -> 5 with stride-2 convs.
+        def _voxel_cnn():
+            return nn.Sequential(
+                nn.Conv3d(EMBED_DIM, 16, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+                nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),
+                nn.ReLU(),
+            )
+
+        self.voxel_conv = _voxel_cnn()
+        self.voxel_conv_far = _voxel_cnn()
+        conv_out = 32 * 5 * 5 * 5  # 5*5*5*32 = 4000
         self.voxel_fc = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
+        self.voxel_fc_far = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
 
         self.scalar_fc = nn.Sequential(nn.Linear(SCALAR_DIM, 64), nn.ReLU())
         self.inv_fc = nn.Sequential(nn.Linear(EMBED_DIM, 32), nn.ReLU())
 
-        self.fuse = nn.Sequential(nn.Linear(128 + 64 + 32, LATENT_DIM), nn.ReLU())
+        self.fuse = nn.Sequential(nn.Linear(128 + 128 + 64 + 32, LATENT_DIM), nn.ReLU())
 
     def encode(self, obs_tensors: dict) -> torch.Tensor:
         voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1)
@@ -117,6 +128,12 @@ class ObsEncoder(nn.Module):
         v = self.voxel_conv(v).reshape(b, -1)
         v = self.voxel_fc(v)
 
+        voxel_far = obs_tensors["voxel_far"].clamp(0, self.num_blocks - 1)
+        vf = self.block_embed(voxel_far)
+        vf = vf.permute(0, 2, 1).reshape(b, EMBED_DIM, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
+        vf = self.voxel_conv_far(vf).reshape(b, -1)
+        vf = self.voxel_fc_far(vf)
+
         s = self.scalar_fc(obs_tensors["scalars"])
 
         inv_ids = obs_tensors["inv_item_id"].clamp(0, self.num_items - 1)
@@ -125,7 +142,7 @@ class ObsEncoder(nn.Module):
         inv = (inv_emb * weight).sum(dim=1)  # (B, 8)
         inv = self.inv_fc(inv)
 
-        return self.fuse(torch.cat([v, s, inv], dim=1))
+        return self.fuse(torch.cat([v, vf, s, inv], dim=1))
 
 
 class ActorCritic(nn.Module):
