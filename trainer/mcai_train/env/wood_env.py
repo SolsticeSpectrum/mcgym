@@ -140,15 +140,15 @@ class ParallelVecEnv:
     single GPU forward — the rlgym-ppo multi-process pattern, here over our shm
     transport. The single-process WoodEnv path is unchanged.
 
-    EXPERIMENTAL — works at small scale but does NOT scale to useful agent counts yet.
-    Measured: 2 gyms x 8 agents steps cleanly at ~35 ms/step, but 2 gyms x 96 and
-    4 gyms x 64 both go Python-CPU-bound and never complete a rollout (gyms ~33%
-    CPU, Python ~74%). So the concurrent send/recv logic is correct; the stall
-    scales with TOTAL agent count in the multi-env path (single-process WoodEnv
-    handles 100 agents fine at ~1083 sps). Root cause unprofiled — likely a per-step
-    Python/GPU cost that grows with the concatenated batch, or core oversubscription
-    from each gym's worker threads. Use --num-envs 1 (the default, supported path)
-    for real runs until this is profiled and fixed.
+    Correct, but NO throughput win on this hardware. Profiled (py-spy): the logic is
+    fine and it does NOT deadlock — 2 gyms x 8 = ~35 ms/step, 2 gyms x 96 = ~280
+    ms/step (192 agents -> ~685 sps, WORSE per-agent than single-process's ~1083 sps
+    at 100 agents). The gym tick for ~96 real-physics ServerPlayers is CPU-heavy, and
+    a 6-core box can't run enough gyms concurrently to amortize it (the step profile
+    is split across torch forward + socket recv waiting on the gyms, no Python
+    hotspot). Net: this box is CPU-bound on per-agent vanilla physics; multiprocess
+    helps only with more cores/machines or cheaper per-agent physics. Use --num-envs 1
+    (default, supported). ParallelVecEnv is kept for multi-machine / future use.
     """
 
     def __init__(self, num_envs, n_agents, seed, registry, episode_len=256,
