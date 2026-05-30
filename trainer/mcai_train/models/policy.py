@@ -101,17 +101,19 @@ class ObsEncoder(nn.Module):
 
         # Near and far voxel grids each get their own 3D CNN (distinct weights) but
         # share the block embedding table above. 17 -> 9 -> 5 with stride-2 convs.
+        # Channels kept small (8->16): block-id geometry is low-capacity, and two 3D CNNs
+        # on a weak GPU dominate the PPO update time, so heavier channels just stall training.
         def _voxel_cnn():
             return nn.Sequential(
-                nn.Conv3d(EMBED_DIM, 16, kernel_size=3, stride=2, padding=1),
+                nn.Conv3d(EMBED_DIM, 8, kernel_size=3, stride=2, padding=1),
                 nn.ReLU(),
-                nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),
+                nn.Conv3d(8, 16, kernel_size=3, stride=2, padding=1),
                 nn.ReLU(),
             )
 
         self.voxel_conv = _voxel_cnn()
         self.voxel_conv_far = _voxel_cnn()
-        conv_out = 32 * 5 * 5 * 5  # 5*5*5*32 = 4000
+        conv_out = 16 * 5 * 5 * 5  # 5*5*5*16 = 2000
         self.voxel_fc = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
         self.voxel_fc_far = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
 
