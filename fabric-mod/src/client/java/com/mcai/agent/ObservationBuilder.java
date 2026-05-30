@@ -26,12 +26,15 @@ public final class ObservationBuilder {
     public static final int VOXEL_EDGE = 17;            // 2*8+1
     public static final int VOXEL_COUNT = 4913;         // 17^3
     public static final int INV_SLOTS = 41;             // 36 main + 4 armor + 1 offhand
-    private static final double DEFAULT_BLOCK_REACH = 4.5;
+    public static final double DEFAULT_BLOCK_REACH = 4.5;
 
     public final long[] voxel = new long[VOXEL_COUNT];
     public final float[] scalars = new float[OnnxPolicy.SCALARS];
     public final long[] invItemId = new long[INV_SLOTS];
     public final float[] invCount = new float[INV_SLOTS];
+
+    /** Block id of the raycast target this build (0 = none/air), for telemetry. */
+    public int targetBlockId;
 
     private final SchemaRegistry registry;
 
@@ -64,11 +67,17 @@ public final class ObservationBuilder {
         }
 
         // --- 2. Target raycast (block-only, no fluids) ---------------------
-        // Mirrors player.pick(reach, 1.0F, false) on the server side.
-        double reach = DEFAULT_BLOCK_REACH;
+        // Mirrors the gym's player.pick(blockInteractionRange(), 1.0F, false):
+        // same reach (the block-interaction-range attribute, ~4.5) and same
+        // fallback so target_* is byte-compatible with training.
+        double reach = player.getBlockInteractionRange();
+        if (reach <= 0.0) {
+            reach = DEFAULT_BLOCK_REACH;
+        }
         boolean targetInRange = false;
         float targetDistance = 0.0f;
         int targetFace = 255; // sentinel: no face
+        targetBlockId = 0;
 
         HitResult hit = player.raycast(reach, 1.0f, false);
         if (hit != null && hit.getType() == HitResult.Type.BLOCK && hit instanceof BlockHitResult bhr) {
@@ -78,6 +87,7 @@ public final class ObservationBuilder {
                 targetFace = face.ordinal();
                 targetDistance = (float) player.getEyePos().distanceTo(bhr.getPos());
                 targetInRange = true;
+                targetBlockId = registry.blockId(Registries.BLOCK.getId(world.getBlockState(hitPos).getBlock()).toString());
             }
         }
 

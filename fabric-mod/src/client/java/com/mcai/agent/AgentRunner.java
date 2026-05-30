@@ -1,37 +1,62 @@
 package com.mcai.agent;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.input.Input;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
-import net.minecraft.client.option.KeyBinding;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Owns the per-tick agent loop: build obs -> run policy -> apply a VALID action.
  *
- * Movement is applied by pressing the player's movement KeyBindings (the same
- * input path a human keyboard drives), so vanilla movement code produces valid
- * move packets. Mining goes through ClientPlayerInteractionManager so the client
- * emits correctly-timed START/STOP_DESTROY_BLOCK packets.
+ * Movement is actuated by REPLACING the player's input object
+ * ({@code ClientPlayerEntity.input}) with a {@link McaiInput} whose tick() sets
+ * the player's {@code playerInput}/{@code movementVector} from the policy action.
+ * This is the meteor/baritone pattern: in 1.21.11 the move vector and the
+ * ServerboundPlayerInputPacket both come from that object, so KeyBindings alone
+ * never move the player. The original input is restored on stop.
+ *
+ * Look is applied via setYaw/setPitch. Mining goes through
+ * ClientPlayerInteractionManager so the client emits correctly-timed
+ * START/STOP_DESTROY_BLOCK packets.
  */
 public final class AgentRunner {
+    private static final Logger LOG = LoggerFactory.getLogger("mcai-agent");
+    private static final int LOG_EVERY_TICKS = 10;
+    private static final int OAK_LOG_BLOCK = 49; // gym id for minecraft:oak_log
+
     private final OnnxPolicy policy;
     private final ObservationBuilder obs;
+    private final McaiInput mcaiInput = new McaiInput();
+    private final SchemaRegistry registry;
+
+    // Saved player input restored on stop. Non-null only while our input is installed.
+    private Input prevInput;
+    private long tickCounter;
 
     public AgentRunner(OnnxPolicy policy, SchemaRegistry registry) {
         this.policy = policy;
+        this.registry = registry;
         this.obs = new ObservationBuilder(registry);
     }
 
-    /** One agent step. Returns a short status string for diagnostics, or null. */
+    /** One agent step. */
     public void tick(MinecraftClient mc) throws Exception {
         ClientPlayerEntity player = mc.player;
         if (player == null || mc.world == null || mc.interactionManager == null) {
             return;
+        }
+
+        // Install our input object once the player exists; restored in stop().
+        if (prevInput == null) {
+            prevInput = player.input;
+            player.input = mcaiInput;
         }
 
         obs.build(mc);
@@ -39,24 +64,15 @@ public final class AgentRunner {
         ActionSpace action = ActionSpace.decode(logits);
 
         applyLook(player, action);
-        applyMovement(mc, action);
+        mcaiInput.setDesired(action);
         applyMining(mc, action);
+
+        logTelemetry(mc, player, action);
     }
 
     private void applyLook(ClientPlayerEntity player, ActionSpace action) {
         player.setYaw(player.getYaw() + action.yawDelta);
         player.setPitch(MathHelper.clamp(player.getPitch() + action.pitchDelta, -90.0f, 90.0f));
-    }
-
-    private void applyMovement(MinecraftClient mc, ActionSpace action) {
-        // forward: +1 -> forward key, -1 -> back key; strafe: +1 -> right(?) consistent
-        // with the gym's left/right convention: strafe -1 = left, +1 = right.
-        setKey(mc.options.forwardKey, action.forward > 0.5f);
-        setKey(mc.options.backKey, action.forward < -0.5f);
-        setKey(mc.options.leftKey, action.strafe < -0.5f);
-        setKey(mc.options.rightKey, action.strafe > 0.5f);
-        setKey(mc.options.jumpKey, action.jump);
-        setKey(mc.options.sprintKey, action.sprint);
     }
 
     private void applyMining(MinecraftClient mc, ActionSpace action) {
@@ -66,8 +82,13 @@ public final class AgentRunner {
             return;
         }
 
-        // Re-raycast the crosshair (block-only) to find the target.
-        HitResult hit = mc.player.raycast(4.5, 1.0f, false);
+        // Re-raycast the crosshair (block-only) at the player's interaction range to
+        // find the target, mirroring the gym's pick(blockInteractionRange, ...).
+        double reach = mc.player.getBlockInteractionRange();
+        if (reach <= 0.0) {
+            reach = ObservationBuilder.DEFAULT_BLOCK_REACH;
+        }
+        HitResult hit = mc.player.raycast(reach, 1.0f, false);
         if (hit == null || hit.getType() != HitResult.Type.BLOCK || !(hit instanceof BlockHitResult bhr)) {
             im.cancelBlockBreaking();
             return;
@@ -93,20 +114,65 @@ public final class AgentRunner {
         }
     }
 
-    private static void setKey(KeyBinding key, boolean down) {
-        key.setPressed(down);
+    // In-world telemetry: log one line every ~10 ticks describing what the agent
+    // perceives and what it decided, so the runClient console shows the agent's
+    // behaviour without a debugger.
+    private void logTelemetry(MinecraftClient mc, ClientPlayerEntity player, ActionSpace action) {
+        if (tickCounter++ % LOG_EVERY_TICKS != 0) {
+            return;
+        }
+
+        int logVoxels = 0;
+        for (long id : obs.voxel) {
+            if (id == OAK_LOG_BLOCK) {
+                logVoxels++;
+            }
+        }
+
+        // target_* live in the scalars: distance/8 at [10], in_range at [11].
+        boolean targetInRange = obs.scalars[11] != 0.0f;
+        float targetDistance = obs.scalars[10] * 8.0f;
+        int targetBlock = obs.targetBlockId;
+
+        // Wood count = sum of inventory counts whose item id is a known log.
+        int woodCount = 0;
+        for (int i = 0; i < obs.invItemId.length; i++) {
+            if (registry.isLogItem((int) obs.invItemId[i])) {
+                woodCount += (int) obs.invCount[i];
+            }
+        }
+
+        LOG.info(
+            "[mcai] tick={} x={} z={} yaw={} pitch={} onGround={} hp={} logVoxels={} targetInRange={} targetBlock={} targetDist={} wood={} | act fwd={} strafe={} jump={} sprint={} yawD={} pitchD={} attack={}",
+            tickCounter,
+            String.format("%.2f", player.getX()),
+            String.format("%.2f", player.getZ()),
+            String.format("%.1f", player.getYaw()),
+            String.format("%.1f", player.getPitch()),
+            player.isOnGround(),
+            String.format("%.1f", player.getHealth()),
+            logVoxels,
+            targetInRange,
+            targetBlock,
+            String.format("%.2f", targetDistance),
+            woodCount,
+            action.forward,
+            action.strafe,
+            action.jump,
+            action.sprint,
+            action.yawDelta,
+            action.pitchDelta,
+            action.attack
+        );
     }
 
-    /** Release all driven inputs and abort any in-progress mining. */
+    /** Restore the player's input and abort any in-progress mining. */
     public void release(MinecraftClient mc) {
-        if (mc.options != null) {
-            setKey(mc.options.forwardKey, false);
-            setKey(mc.options.backKey, false);
-            setKey(mc.options.leftKey, false);
-            setKey(mc.options.rightKey, false);
-            setKey(mc.options.jumpKey, false);
-            setKey(mc.options.sprintKey, false);
+        mcaiInput.clear();
+        if (mc.player != null && prevInput != null) {
+            mc.player.input = prevInput;
         }
+        prevInput = null;
         if (mc.interactionManager != null) {
             mc.interactionManager.cancelBlockBreaking();
         }
