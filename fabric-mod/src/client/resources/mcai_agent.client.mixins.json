@@ -1,0 +1,9 @@
+{
+	"required": true,
+	"package": "com.mcai.agent.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
