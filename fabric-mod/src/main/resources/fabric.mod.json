@@ -1,0 +1,29 @@
+{
+	"schemaVersion": 1,
+	"id": "mcai_agent",
+	"version": "${version}",
+	"name": "MCAI Agent",
+	"description": "Runs a trained MCAI ONNX policy inside a real Minecraft client and drives the player with valid actions.",
+	"authors": [
+		"MCAI"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.mcai.agent.McaiAgentClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "mcai_agent.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.0",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
