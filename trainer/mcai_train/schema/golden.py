@@ -20,6 +20,7 @@ def golden_obs_record() -> dict:
         "selected_slot": 4,
         # Deterministic, varied, bounded block ids.
         "voxel_blocks": (np.arange(edge3, dtype="<i4") % 97),
+        "voxel_far": (np.arange(edge3, dtype="<i4") % 89),
         "target_block": 42,
         "target_face": 2,
         "target_distance": 2.75,
