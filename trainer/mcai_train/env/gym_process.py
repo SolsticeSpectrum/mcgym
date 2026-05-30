@@ -22,6 +22,7 @@ def launch_gym(
     shm_path: str,
     sock_path: str,
     timeout_s: float = 180.0,
+    curriculum: str = "",
 ) -> subprocess.Popen:
     """Start the gym via gradle runGymTransport and wait for readiness.
 
@@ -40,6 +41,7 @@ def launch_gym(
         f"-PsockPath={sock_path}",
         f"-Pagents={n_agents}",
         f"-Pseed={seed}",
+        f"-Pcurriculum={curriculum}",
         "--offline",
         "--console=plain",
     ]

@@ -15,15 +15,15 @@ import numpy as np
 
 from mcai_train.models.action_space import actions_to_records
 from mcai_train.schema.registry import Registry
-from mcai_train.tasks.gather_wood import GatherWoodReward, log_item_ids, wood_count
+from mcai_train.tasks.gather_wood import (
+    WoodShapedReward,
+    log_block_ids,
+    log_item_ids,
+    wood_count,
+)
 
 from .gym_process import launch_gym
 from .shm_transport import ShmTransport
-
-# Small shaping bonus per step for looking at an in-range log block, to densify
-# the otherwise sparse "wood gained" signal. Kept tiny so it cannot dominate the
-# real reward of actually collecting wood (delta wood per log is >= 1.0).
-TARGET_SHAPING = 0.01
 
 
 class WoodEnv:
@@ -34,12 +34,14 @@ class WoodEnv:
         registry: Registry,
         episode_len: int = 500,
         gym_timeout_s: float = 180.0,
+        curriculum: str = "",
     ) -> None:
         self.n_agents = n_agents
         self.seed = seed
         self.registry = registry
         self.episode_len = episode_len
         self._log_ids = log_item_ids(registry)
+        self._log_block_ids = log_block_ids(registry)
         self._log_id_arr = np.array(sorted(self._log_ids), dtype=np.int64)
 
         self._tmpdir = tempfile.mkdtemp(prefix="mcai_woodenv_")
@@ -47,11 +49,15 @@ class WoodEnv:
         self._sock_path = str(pathlib.Path(self._tmpdir) / "gym.sock")
 
         self._proc = launch_gym(
-            n_agents, seed, self._shm_path, self._sock_path, timeout_s=gym_timeout_s
+            n_agents, seed, self._shm_path, self._sock_path,
+            timeout_s=gym_timeout_s, curriculum=curriculum,
         )
         self.transport = ShmTransport(self._shm_path, self._sock_path, n_agents)
 
-        self._rewards = [GatherWoodReward(self._log_ids) for _ in range(n_agents)]
+        self._rewards = [
+            WoodShapedReward(self._log_ids, self._log_block_ids)
+            for _ in range(n_agents)
+        ]
         self._step_counter = 0
 
     def _reset_reward_state(self, obs_struct: np.ndarray) -> None:
@@ -64,20 +70,18 @@ class WoodEnv:
         self._reset_reward_state(obs_struct)
         return obs_struct
 
-    def _target_is_log(self, obs_record) -> bool:
-        return int(obs_record["target_block"]) in self._log_ids
-
     def step(self, action_idx: np.ndarray):
-        records = actions_to_records(np.asarray(action_idx))
+        action_idx = np.asarray(action_idx)
+        records = actions_to_records(action_idx)
         obs_struct = self.transport.step(records)
+
+        # Attack is head index 6 (BINS order: forward,strafe,jump,sprint,yaw,pitch,attack);
+        # value 1 = attack pressed this tick.
+        attacked = action_idx[:, 6] == 1
 
         reward = np.zeros(self.n_agents, dtype=np.float32)
         for i in range(self.n_agents):
-            delta = self._rewards[i].compute(obs_struct[i])
-            shaping = 0.0
-            if obs_struct[i]["target_in_range"] and self._target_is_log(obs_struct[i]):
-                shaping = TARGET_SHAPING
-            reward[i] = delta + shaping
+            reward[i] = self._rewards[i].compute(obs_struct[i], bool(attacked[i]))
 
         self._step_counter += 1
         done_flag = self._step_counter >= self.episode_len
