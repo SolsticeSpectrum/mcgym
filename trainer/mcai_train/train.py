@@ -44,6 +44,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--resume", action="store_true")
     p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
+    p.add_argument("--monitor-port", type=int, default=0,
+                   help="if >0, serve a top-down web view of agents on this port")
     return p.parse_args(argv)
 
 
@@ -83,6 +85,12 @@ def train(args: argparse.Namespace) -> None:
     env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
                   curriculum=args.curriculum)
     buffer = RolloutBuffer(args.rollout_len, args.n_agents)
+
+    monitor = None
+    if args.monitor_port:
+        from .monitor import TrainMonitor
+        monitor = TrainMonitor(args.monitor_port, registry, args.n_agents)
+        print(f"[train] web monitor at {monitor.start()}")
 
     hyperparams = {
         "lr": args.lr,
@@ -138,6 +146,8 @@ def train(args: argparse.Namespace) -> None:
                     completed_ep_rewards.extend(ep_reward.tolist())
                     ep_reward = np.zeros(args.n_agents, dtype=np.float64)
                 obs_struct = next_obs
+                if monitor is not None:
+                    monitor.update(next_obs, action_np, reward, cumulative_timesteps)
 
             with torch.no_grad():
                 last_value = model.get_action(obs_to_tensors(obs_struct, device))[2]
