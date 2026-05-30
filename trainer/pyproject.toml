@@ -17,3 +17,6 @@ include = ["mcai_train*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: end-to-end tests that boot the real Minecraft gym (world gen is slow)",
+]
