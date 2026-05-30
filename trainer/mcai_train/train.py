@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from mcai_train import checkpoint
-from mcai_train.env.wood_env import WoodEnv
+from mcai_train.env.wood_env import ParallelVecEnv, WoodEnv
 from mcai_train.models.policy import ActorCritic, obs_to_tensors
 from mcai_train.ppo.buffer import RolloutBuffer
 from mcai_train.ppo.learner import PPOLearner
@@ -45,6 +45,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--resume", action="store_true")
     p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
     p.add_argument("--arena", default="", help="gym arena mode, e.g. 'flat'")
+    p.add_argument("--num-envs", type=int, default=1,
+                   help="parallel gym processes; total agents = num_envs * n_agents")
     p.add_argument("--monitor-port", type=int, default=0,
                    help="if >0, serve a top-down web view of agents on this port")
     return p.parse_args(argv)
@@ -83,14 +85,20 @@ def train(args: argparse.Namespace) -> None:
             cumulative_timesteps = int(meta["cumulative_timesteps"])
             print(f"[train] resumed at {cumulative_timesteps} timesteps")
 
-    env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
-                  curriculum=args.curriculum, arena=args.arena)
-    buffer = RolloutBuffer(args.rollout_len, args.n_agents)
+    if args.num_envs > 1:
+        env = ParallelVecEnv(args.num_envs, args.n_agents, args.seed, registry,
+                             episode_len=args.episode_len, curriculum=args.curriculum,
+                             arena=args.arena)
+    else:
+        env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
+                      curriculum=args.curriculum, arena=args.arena)
+    n = env.n_agents  # total agents across all parallel gyms
+    buffer = RolloutBuffer(args.rollout_len, n)
 
     monitor = None
     if args.monitor_port:
         from .monitor import TrainMonitor
-        monitor = TrainMonitor(args.monitor_port, registry, args.n_agents)
+        monitor = TrainMonitor(args.monitor_port, registry, n)
         print(f"[train] web monitor at {monitor.start()}")
 
     hyperparams = {
@@ -112,7 +120,7 @@ def train(args: argparse.Namespace) -> None:
         }
 
     obs_struct = env.reset()
-    ep_reward = np.zeros(args.n_agents, dtype=np.float64)
+    ep_reward = np.zeros(n, dtype=np.float64)
     # Episodes (len 500) usually span multiple rollouts (len 128), so most
     # rollouts complete no episode. Carry the mean episode return across
     # rollouts as an EMA so ep_rew is reported every line and never NaN.
@@ -145,7 +153,7 @@ def train(args: argparse.Namespace) -> None:
                 ep_reward += reward
                 if done.all():
                     completed_ep_rewards.extend(ep_reward.tolist())
-                    ep_reward = np.zeros(args.n_agents, dtype=np.float64)
+                    ep_reward = np.zeros(n, dtype=np.float64)
                 obs_struct = next_obs
                 if monitor is not None:
                     monitor.update(next_obs, action_np, reward, cumulative_timesteps)
@@ -155,11 +163,11 @@ def train(args: argparse.Namespace) -> None:
             buffer.compute_gae(last_value.cpu().numpy())
 
             metrics = learner.update(buffer)
-            cumulative_timesteps += args.rollout_len * args.n_agents
+            cumulative_timesteps += args.rollout_len * n
 
             wood = env.wood_held(obs_struct)
             elapsed = time.monotonic() - rollout_start
-            sps = (args.rollout_len * args.n_agents) / max(elapsed, 1e-6)
+            sps = (args.rollout_len * n) / max(elapsed, 1e-6)
             if completed_ep_rewards:
                 rollout_mean = float(np.mean(completed_ep_rewards))
                 ep_rew_ema = (

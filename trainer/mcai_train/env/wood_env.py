@@ -73,9 +73,17 @@ class WoodEnv:
         return obs_struct
 
     def step(self, action_idx: np.ndarray):
-        action_idx = np.asarray(action_idx)
-        records = actions_to_records(action_idx)
-        obs_struct = self.transport.step(records)
+        self.step_send(action_idx)
+        return self.step_recv()
+
+    def step_send(self, action_idx: np.ndarray) -> None:
+        """Fire this env's gym step without waiting (for the parallel vec-env)."""
+        self._pending_action = np.asarray(action_idx)
+        self.transport.step_send(actions_to_records(self._pending_action))
+
+    def step_recv(self):
+        obs_struct = self.transport.step_recv()
+        action_idx = self._pending_action
 
         # Attack is head index 6 (BINS order: forward,strafe,jump,sprint,yaw,pitch,attack);
         # value 1 = attack pressed this tick.
@@ -121,3 +129,55 @@ class WoodEnv:
                     self._proc.kill()
             pathlib.Path(self._shm_path).unlink(missing_ok=True)
             pathlib.Path(self._sock_path).unlink(missing_ok=True)
+
+
+class ParallelVecEnv:
+    """M WoodEnv gyms stepped concurrently as one (M*N_per)-agent vec-env.
+
+    step() fires every gym's tick first (step_send) then collects them (step_recv),
+    so the M Java gym processes tick in parallel across CPU cores while Python
+    waits once. Obs/reward/done are concatenated into one (M*N_per,) batch for a
+    single GPU forward — the rlgym-ppo multi-process pattern, here over our shm
+    transport. The single-process WoodEnv path is unchanged.
+
+    EXPERIMENTAL — throughput NOT yet validated. A 4x64 run was Python-CPU-bound and
+    did not complete a rollout (the 4 gyms sat ~33% CPU while Python ran ~74%),
+    likely core oversubscription (each Java gym spawns worker threads; 4 of them
+    thrash 6 cores) and/or a per-step Python cost to profile. Use --num-envs 1
+    (single-process WoodEnv) for real runs until this is debugged.
+    """
+
+    def __init__(self, num_envs, n_agents, seed, registry, episode_len=256,
+                 curriculum="", arena="", gym_timeout_s=180.0):
+        self.num_envs = num_envs
+        self.n_per = n_agents
+        self.n_agents = num_envs * n_agents  # total, for the buffer/model
+        self.envs = [
+            WoodEnv(n_agents, seed + e, registry, episode_len=episode_len,
+                    curriculum=curriculum, arena=arena, gym_timeout_s=gym_timeout_s)
+            for e in range(num_envs)
+        ]
+
+    def reset(self) -> np.ndarray:
+        return np.concatenate([e.reset() for e in self.envs])
+
+    def step(self, action_idx: np.ndarray):
+        action_idx = np.asarray(action_idx)
+        chunks = np.split(action_idx, self.num_envs)  # each (n_per, 7)
+        for e, a in zip(self.envs, chunks):
+            e.step_send(a)
+        obs, rew, done = [], [], []
+        for e in self.envs:
+            o, r, d = e.step_recv()
+            obs.append(o); rew.append(r); done.append(d)
+        return np.concatenate(obs), np.concatenate(rew), np.concatenate(done)
+
+    def wood_held(self, obs_struct: np.ndarray) -> np.ndarray:
+        return np.concatenate([
+            self.envs[e].wood_held(obs_struct[e * self.n_per:(e + 1) * self.n_per])
+            for e in range(self.num_envs)
+        ])
+
+    def close(self) -> None:
+        for e in self.envs:
+            e.close()

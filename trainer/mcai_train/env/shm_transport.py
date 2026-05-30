@@ -83,13 +83,27 @@ class ShmTransport:
         return self._obs_view().copy()
 
     def step(self, actions) -> np.ndarray:
+        self.step_send(actions)
+        return self.step_recv()
+
+    def step_send(self, actions) -> None:
+        """Write actions to shm and fire CMD_STEP WITHOUT waiting for the reply.
+
+        Split from the reply so a vec-env can fire all its gyms' steps first and
+        only then collect replies — the gyms then tick concurrently across cores.
+        """
         view = self._action_view()
         if isinstance(actions, np.ndarray) and actions.dtype == spec.ACTION_DTYPE:
             view[:] = actions
         else:
             encoded = codec.encode_action_batch(list(actions))
             view[:] = np.frombuffer(encoded, dtype=spec.ACTION_DTYPE)
-        self._command(CMD_STEP)
+        self._sock.sendall(bytes([CMD_STEP]))
+
+    def step_recv(self) -> np.ndarray:
+        reply = self._recv_exact(1)
+        if reply[0] != REPLY_OK:
+            raise RuntimeError(f"gym replied {reply[0]}, expected OK={REPLY_OK}")
         return self._obs_view().copy()
 
     def close(self) -> None:
