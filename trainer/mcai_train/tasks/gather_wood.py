@@ -40,6 +40,8 @@ W_APPROACH = 0.3   # potential shaping: getting closer to the nearest log block.
 W_FACE = 0.05      # per-step bonus for looking at an in-range log block.
 W_ATTACK_LOG = 0.15  # per-step bonus for ATTACKING an in-range log; rewards the
                      # sustained mining a random policy never discovers on its own.
+W_DEATH = 10.0       # one-time penalty applied when the agent dies (health<=0);
+                     # death is a real, learnable negative signal, not engineered away.
 W_ANYITEM = 0.2    # Δ(total inventory count) — bootstraps "pick something up".
 
 

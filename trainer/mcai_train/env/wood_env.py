@@ -16,6 +16,7 @@ import numpy as np
 from mcai_train.models.action_space import actions_to_records
 from mcai_train.schema.registry import Registry
 from mcai_train.tasks.gather_wood import (
+    W_DEATH,
     WoodShapedReward,
     log_block_ids,
     log_item_ids,
@@ -35,6 +36,7 @@ class WoodEnv:
         episode_len: int = 500,
         gym_timeout_s: float = 180.0,
         curriculum: str = "",
+        arena: str = "",
     ) -> None:
         self.n_agents = n_agents
         self.seed = seed
@@ -50,7 +52,7 @@ class WoodEnv:
 
         self._proc = launch_gym(
             n_agents, seed, self._shm_path, self._sock_path,
-            timeout_s=gym_timeout_s, curriculum=curriculum,
+            timeout_s=gym_timeout_s, curriculum=curriculum, arena=arena,
         )
         self.transport = ShmTransport(self._shm_path, self._sock_path, n_agents)
 
@@ -59,11 +61,15 @@ class WoodEnv:
             for _ in range(n_agents)
         ]
         self._step_counter = 0
+        # Per-agent: True on the step right after a death frame, so the next step
+        # re-inits that agent's reward tracker against its fresh respawn obs.
+        self._just_died = np.zeros(n_agents, dtype=bool)
 
     def _reset_reward_state(self, obs_struct: np.ndarray) -> None:
         for i in range(self.n_agents):
             self._rewards[i].reset(obs_struct[i])
         self._step_counter = 0
+        self._just_died[:] = False
 
     def reset(self) -> np.ndarray:
         obs_struct = self.transport.reset()
@@ -78,16 +84,30 @@ class WoodEnv:
         # Attack is head index 6 (BINS order: forward,strafe,jump,sprint,yaw,pitch,attack);
         # value 1 = attack pressed this tick.
         attacked = action_idx[:, 6] == 1
+        health = obs_struct["health"]
 
         reward = np.zeros(self.n_agents, dtype=np.float32)
+        died = np.zeros(self.n_agents, dtype=bool)
         for i in range(self.n_agents):
-            reward[i] = self._rewards[i].compute(obs_struct[i], bool(attacked[i]))
+            if self._just_died[i]:
+                # First frame of the fresh episode after the gym auto-revived it:
+                # re-init the tracker against the respawn obs, no reward this step.
+                self._rewards[i].reset(obs_struct[i])
+                self._just_died[i] = False
+            elif health[i] <= 0.0:
+                # Death frame: big penalty, terminal. The gym revives this agent
+                # before the next step (per-agent auto-reset).
+                reward[i] = -W_DEATH
+                self._just_died[i] = True
+                died[i] = True
+            else:
+                reward[i] = self._rewards[i].compute(obs_struct[i], bool(attacked[i]))
 
         self._step_counter += 1
-        done_flag = self._step_counter >= self.episode_len
-        done = np.full(self.n_agents, done_flag, dtype=bool)
+        timeout = self._step_counter >= self.episode_len
+        done = died | timeout  # per-agent terminal on death; synchronized on timeout
 
-        if done_flag:
+        if timeout:
             obs_struct = self.transport.reset()
             self._reset_reward_state(obs_struct)
 

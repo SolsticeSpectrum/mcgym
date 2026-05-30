@@ -44,6 +44,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--resume", action="store_true")
     p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
+    p.add_argument("--arena", default="", help="gym arena mode, e.g. 'flat'")
     p.add_argument("--monitor-port", type=int, default=0,
                    help="if >0, serve a top-down web view of agents on this port")
     return p.parse_args(argv)
@@ -83,7 +84,7 @@ def train(args: argparse.Namespace) -> None:
             print(f"[train] resumed at {cumulative_timesteps} timesteps")
 
     env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
-                  curriculum=args.curriculum)
+                  curriculum=args.curriculum, arena=args.arena)
     buffer = RolloutBuffer(args.rollout_len, args.n_agents)
 
     monitor = None
