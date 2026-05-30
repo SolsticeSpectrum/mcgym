@@ -158,11 +158,14 @@ def train(args: argparse.Namespace) -> None:
                 if monitor is not None:
                     monitor.update(next_obs, action_np, reward, cumulative_timesteps)
 
+            collect_end = time.monotonic()
             with torch.no_grad():
                 last_value = model.get_action(obs_to_tensors(obs_struct, device))[2]
             buffer.compute_gae(last_value.cpu().numpy())
 
             metrics = learner.update(buffer)
+            update_secs = time.monotonic() - collect_end
+            collect_secs = collect_end - rollout_start
             cumulative_timesteps += args.rollout_len * n
 
             wood = env.wood_held(obs_struct)
@@ -185,7 +188,7 @@ def train(args: argparse.Namespace) -> None:
                 f"ep_rew={mean_ep_r:.3f} wood/agent={wood.mean():.2f} "
                 f"pi_loss={metrics['policy_loss']:.4f} v_loss={metrics['value_loss']:.4f} "
                 f"ent={metrics['entropy']:.3f} clip={metrics['clip_frac']:.3f} "
-                f"sps={sps:.0f}"
+                f"sps={sps:.0f} collect={collect_secs:.1f}s update={update_secs:.1f}s"
             )
 
             if cumulative_timesteps - last_ckpt >= args.checkpoint_every:
