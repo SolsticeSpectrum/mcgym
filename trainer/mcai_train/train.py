@@ -43,6 +43,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--minibatch", type=int, default=2048)
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
     return p.parse_args(argv)
 
 
@@ -79,7 +80,8 @@ def train(args: argparse.Namespace) -> None:
             cumulative_timesteps = int(meta["cumulative_timesteps"])
             print(f"[train] resumed at {cumulative_timesteps} timesteps")
 
-    env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len)
+    env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
+                  curriculum=args.curriculum)
     buffer = RolloutBuffer(args.rollout_len, args.n_agents)
 
     hyperparams = {
@@ -102,6 +104,11 @@ def train(args: argparse.Namespace) -> None:
 
     obs_struct = env.reset()
     ep_reward = np.zeros(args.n_agents, dtype=np.float64)
+    # Episodes (len 500) usually span multiple rollouts (len 128), so most
+    # rollouts complete no episode. Carry the mean episode return across
+    # rollouts as an EMA so ep_rew is reported every line and never NaN.
+    EP_EMA_BETA = 0.9
+    ep_rew_ema = None
     last_ckpt = cumulative_timesteps
     start = time.monotonic()
 
@@ -142,8 +149,17 @@ def train(args: argparse.Namespace) -> None:
             wood = env.wood_held(obs_struct)
             elapsed = time.monotonic() - rollout_start
             sps = (args.rollout_len * args.n_agents) / max(elapsed, 1e-6)
+            if completed_ep_rewards:
+                rollout_mean = float(np.mean(completed_ep_rewards))
+                ep_rew_ema = (
+                    rollout_mean
+                    if ep_rew_ema is None
+                    else EP_EMA_BETA * ep_rew_ema + (1.0 - EP_EMA_BETA) * rollout_mean
+                )
+            # Report the running EMA; before any episode completes, fall back to
+            # the in-progress mean return so the line is always a real number.
             mean_ep_r = (
-                float(np.mean(completed_ep_rewards)) if completed_ep_rewards else float("nan")
+                ep_rew_ema if ep_rew_ema is not None else float(ep_reward.mean())
             )
             print(
                 f"[train] t={cumulative_timesteps} "
