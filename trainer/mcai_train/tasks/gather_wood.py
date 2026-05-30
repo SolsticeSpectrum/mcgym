@@ -42,6 +42,8 @@ W_ATTACK_LOG = 0.15  # per-step bonus for ATTACKING an in-range log; rewards the
                      # sustained mining a random policy never discovers on its own.
 W_DEATH = 10.0       # one-time penalty applied when the agent dies (health<=0);
                      # death is a real, learnable negative signal, not engineered away.
+W_CAMERA = 0.003     # per-step penalty per degree of |yaw_delta|+|pitch_delta|, to
+                     # discourage chaotic spinning so the agent holds aim to finish a mine.
 W_ANYITEM = 0.2    # Δ(total inventory count) — bootstraps "pick something up".
 
 

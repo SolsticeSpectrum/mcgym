@@ -16,12 +16,16 @@ import numpy as np
 from mcai_train.models.action_space import actions_to_records
 from mcai_train.schema.registry import Registry
 from mcai_train.tasks.gather_wood import (
+    W_CAMERA,
     W_DEATH,
     BatchWoodReward,
     log_block_ids,
     log_item_ids,
     wood_count,
 )
+
+# |degrees| for each camera bin (yaw/pitch heads use bins {-10,-3,0,3,10}).
+_CAM_ABS = np.array([10.0, 3.0, 0.0, 3.0, 10.0], dtype=np.float32)
 
 from .gym_process import launch_gym
 from .shm_transport import ShmTransport
@@ -92,6 +96,10 @@ class WoodEnv:
 
         # Vectorised reward over all agents (updates the batch tracker for all).
         reward = self._reward.compute(obs_struct, attacked)
+        # Camera-smoothness penalty: discourage chaotic spinning so the agent holds
+        # aim long enough to finish a mine (yaw bin = head 4, pitch bin = head 5).
+        cam = _CAM_ABS[action_idx[:, 4]] + _CAM_ABS[action_idx[:, 5]]
+        reward = reward - W_CAMERA * cam
         # Agents revived this step (the frame after a death): their cross-episode
         # delta is spurious, so zero it; the tracker is now re-based on the respawn.
         reward[self._just_died] = 0.0
