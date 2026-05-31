@@ -1,0 +1,26 @@
+# Convenience compose for the GPU box. Bring up:
+#   SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" docker compose -f docker/docker-compose.yml up -d --build
+# Then:  ssh -p 2222 root@<box>   (and -L 8088:localhost:8088 to view the web monitor)
+services:
+  mcai:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mcai-train
+    environment:
+      - SSH_PUBKEY=${SSH_PUBKEY:-}
+      - MCAI_HOME=/workspace/mcai
+    ports:
+      - "2222:22"      # ssh
+      - "8088:8088"    # training web monitor
+    shm_size: "4gb"    # REQUIRED: the gym transport uses /dev/shm (default 64MB is too small)
+    volumes:
+      - ./runs:/workspace/mcai/trainer/runs   # checkpoints persist on the host (sync home from here)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1            # one RTX 6000 is plenty; set 'all' for both
+              capabilities: [gpu]
+    restart: unless-stopped
