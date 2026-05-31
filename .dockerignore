@@ -1,0 +1,22 @@
+# Build context for the training image. Exclude everything big that the image
+# rebuilds (venv, gradle build outputs) or doesn't need (decompiler inputs, refs).
+.git
+.worktree
+reference/
+**/build/
+**/.gradle/
+trainer/.venv/
+trainer/runs/
+trainer/**/__pycache__/
+**/*.pyc
+logs/
+**/*.log
+# Decompiler-only inputs: server/src is already patched, so compile doesn't need these.
+minecraft-decomp/decompSrc/
+minecraft-decomp/libs/
+minecraft-decomp/patchSrc/
+minecraft-decomp/run/
+minecraft-decomp/run_server/
+minecraft-decomp/mcai/
+# Keep: minecraft-decomp/{server/src, jars, build.gradle, settings.gradle, buildSrc,
+# gradle, gradlew, gradle.properties, mcai-log4j2.xml, patches}, schema/, trainer/ src, weights/
