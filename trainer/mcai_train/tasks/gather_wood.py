@@ -33,10 +33,15 @@ _CENTER = (_EDGE**3) // 2
 # Distance returned when no log is present anywhere in the grid (> max possible
 # Euclidean offset within the radius), so potential shaping stays finite/bounded.
 NO_LOG_DIST = 16.0
+# Far shell samples every VOXEL_FAR_STRIDE blocks (radius 8*stride). Sentinel must exceed the
+# max real distance in that grid (corner ~ 8*stride*sqrt(3)).
+NO_LOG_DIST_FAR = 80.0
 
 # --- reward component weights (tune here) ----------------------------------
 W_WOOD = 10.0      # Δ(wood item count) — the real objective.
-W_APPROACH = 0.3   # potential shaping: getting closer to the nearest log block.
+W_APPROACH = 0.3   # potential shaping: getting closer to the nearest log in the NEAR grid (<=8 blocks).
+W_APPROACH_FAR = 0.1  # same, on the FAR render-distance shell (<=32 blocks) — pulls the agent toward
+                      # distant trees so it can learn to navigate to wood that isn't already adjacent.
 W_FACE = 0.05      # per-step bonus for looking at an in-range log block.
 W_ATTACK_LOG = 0.15  # per-step bonus for ATTACKING an in-range log; rewards the
                      # sustained mining a random policy never discovers on its own.
@@ -214,8 +219,11 @@ class BatchWoodReward:
                 for dx in range(-r, r + 1):
                     cell[((dy + r) * edge + (dz + r)) * edge + (dx + r)] = (dx * dx + dy * dy + dz * dz) ** 0.5
         self._cell_dist = cell
+        # Far shell cells are stride blocks apart, so real distance = cell_dist * stride.
+        self._far_cell_dist = cell * float(spec.VOXEL_FAR_STRIDE)
         self._prev_wood = None
         self._prev_dist = None
+        self._prev_far = None
         self._prev_total = None
 
     def _wood(self, obs):
@@ -229,23 +237,31 @@ class BatchWoodReward:
         mask = np.isin(obs["voxel_blocks"], self._block_arr)
         return np.where(mask, self._cell_dist[None, :], NO_LOG_DIST).min(axis=1).astype(np.float32)
 
+    def _nearest_far(self, obs):
+        mask = np.isin(obs["voxel_far"], self._block_arr)
+        return np.where(mask, self._far_cell_dist[None, :], NO_LOG_DIST_FAR).min(axis=1).astype(np.float32)
+
     def reset(self, obs) -> None:
         self._prev_wood = self._wood(obs)
         self._prev_dist = self._nearest(obs)
+        self._prev_far = self._nearest_far(obs)
         self._prev_total = self._total(obs)
 
     def compute(self, obs, attacked) -> np.ndarray:
         wood = self._wood(obs)
         dist = self._nearest(obs)
+        far = self._nearest_far(obs)
         total = self._total(obs)
         r = (
             W_WOOD * (wood - self._prev_wood)
             + W_APPROACH * (self._prev_dist - dist)
+            + W_APPROACH_FAR * (self._prev_far - far)
             + W_ANYITEM * np.maximum(total - self._prev_total, 0.0)
         )
         looking = (obs["target_in_range"] == 1) & np.isin(obs["target_block"], self._block_arr)
         r = r + W_FACE * looking + W_ATTACK_LOG * (looking & np.asarray(attacked))
         self._prev_wood = wood
         self._prev_dist = dist
+        self._prev_far = far
         self._prev_total = total
         return r.astype(np.float32)
