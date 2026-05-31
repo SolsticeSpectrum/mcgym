@@ -17,6 +17,8 @@ from mcai_train.models.action_space import actions_to_records
 from mcai_train.schema.registry import Registry
 from mcai_train.tasks.gather_wood import (
     W_CAMERA,
+    W_CAMERA_JERK,
+    W_JUMP,
     W_DEATH,
     BatchWoodReward,
     log_block_ids,
@@ -26,6 +28,8 @@ from mcai_train.tasks.gather_wood import (
 
 # |degrees| for each camera bin (yaw/pitch heads use bins {-10,-3,0,3,10}).
 _CAM_ABS = np.array([10.0, 3.0, 0.0, 3.0, 10.0], dtype=np.float32)
+# Signed degrees per bin, so jerk = |Δcmd| captures direction reversals (the oscillation).
+_CAM_SIGNED = np.array([-10.0, -3.0, 0.0, 3.0, 10.0], dtype=np.float32)
 
 from .gym_process import launch_gym
 from .shm_transport import ShmTransport
@@ -65,11 +69,16 @@ class WoodEnv:
         # Per-agent: True on the step right after a death frame, so the next step
         # re-inits that agent's reward tracker against its fresh respawn obs.
         self._just_died = np.zeros(n_agents, dtype=bool)
+        # Previous camera command (signed degrees) per agent, for the jerk penalty.
+        self._prev_yaw_cmd = np.zeros(n_agents, dtype=np.float32)
+        self._prev_pitch_cmd = np.zeros(n_agents, dtype=np.float32)
 
     def _reset_reward_state(self, obs_struct: np.ndarray) -> None:
         self._reward.reset(obs_struct)
         self._step_counter = 0
         self._just_died[:] = False
+        self._prev_yaw_cmd[:] = 0.0
+        self._prev_pitch_cmd[:] = 0.0
 
     def reset(self) -> np.ndarray:
         obs_struct = self.transport.reset()
@@ -96,10 +105,20 @@ class WoodEnv:
 
         # Vectorised reward over all agents (updates the batch tracker for all).
         reward = self._reward.compute(obs_struct, attacked)
-        # Camera-smoothness penalty: discourage chaotic spinning so the agent holds
-        # aim long enough to finish a mine (yaw bin = head 4, pitch bin = head 5).
-        cam = _CAM_ABS[action_idx[:, 4]] + _CAM_ABS[action_idx[:, 5]]
-        reward = reward - W_CAMERA * cam
+
+        # Camera smoothness: penalize JERK (change in turn rate vs last tick) so the agent
+        # scans smoothly and holds aim, instead of oscillating; a small velocity term curbs
+        # endless spinning, and a small jump term curbs random hopping (yaw=head4, pitch=head5,
+        # jump=head2). CAPS-style action-rate shaping (arXiv:2012.06644).
+        yaw_cmd = _CAM_SIGNED[action_idx[:, 4]]
+        pitch_cmd = _CAM_SIGNED[action_idx[:, 5]]
+        jerk = np.abs(yaw_cmd - self._prev_yaw_cmd) + np.abs(pitch_cmd - self._prev_pitch_cmd)
+        vel = np.abs(yaw_cmd) + np.abs(pitch_cmd)
+        jump = action_idx[:, 2].astype(np.float32)
+        reward = reward - W_CAMERA * vel - W_CAMERA_JERK * jerk - W_JUMP * jump
+        self._prev_yaw_cmd = yaw_cmd.astype(np.float32)
+        self._prev_pitch_cmd = pitch_cmd.astype(np.float32)
+
         # Agents revived this step (the frame after a death): their cross-episode
         # delta is spurious, so zero it; the tracker is now re-based on the respawn.
         reward[self._just_died] = 0.0
@@ -107,6 +126,10 @@ class WoodEnv:
         died = health <= 0.0
         reward[died] = -W_DEATH
         self._just_died = died.copy()
+        # Reset the jerk reference for agents that died/respawn, so the first post-relocate
+        # action isn't penalized against a stale pre-death camera command.
+        self._prev_yaw_cmd[died] = 0.0
+        self._prev_pitch_cmd[died] = 0.0
 
         self._step_counter += 1
         timeout = self._step_counter >= self.episode_len
