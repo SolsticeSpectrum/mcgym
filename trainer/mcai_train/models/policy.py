@@ -44,6 +44,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
 
     voxel = np.ascontiguousarray(obs["voxel_blocks"]).astype(np.int64)
     voxel_far = np.ascontiguousarray(obs["voxel_far"]).astype(np.int64)
+    target_block = np.ascontiguousarray(obs["target_block"]).astype(np.int64)
 
     vel = np.ascontiguousarray(obs["vel"]).astype(np.float32)
     yaw = np.ascontiguousarray(obs["yaw"]).astype(np.float32)
@@ -85,6 +86,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     return {
         "voxel": torch.from_numpy(voxel).to(device),
         "voxel_far": torch.from_numpy(voxel_far).to(device),
+        "target_block": torch.from_numpy(target_block).to(device),
         "scalars": torch.from_numpy(scalars).to(device),
         "inv_item_id": torch.from_numpy(inv_item_id).to(device),
         "inv_count": torch.from_numpy(inv_count).to(device),
@@ -119,8 +121,11 @@ class ObsEncoder(nn.Module):
 
         self.scalar_fc = nn.Sequential(nn.Linear(SCALAR_DIM, 64), nn.ReLU())
         self.inv_fc = nn.Sequential(nn.Linear(EMBED_DIM, 32), nn.ReLU())
+        # Identity of the block under the crosshair (shares the block embedding) so the
+        # policy can tell a trunk from leaves when it has something in range.
+        self.target_fc = nn.Sequential(nn.Linear(EMBED_DIM, 16), nn.ReLU())
 
-        self.fuse = nn.Sequential(nn.Linear(128 + 128 + 64 + 32, LATENT_DIM), nn.ReLU())
+        self.fuse = nn.Sequential(nn.Linear(128 + 128 + 64 + 32 + 16, LATENT_DIM), nn.ReLU())
 
     def encode(self, obs_tensors: dict) -> torch.Tensor:
         voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1)
@@ -144,7 +149,10 @@ class ObsEncoder(nn.Module):
         inv = (inv_emb * weight).sum(dim=1)  # (B, 8)
         inv = self.inv_fc(inv)
 
-        return self.fuse(torch.cat([v, vf, s, inv], dim=1))
+        tb = obs_tensors["target_block"].clamp(0, self.num_blocks - 1)
+        tgt = self.target_fc(self.block_embed(tb))  # (B, 16)
+
+        return self.fuse(torch.cat([v, vf, s, inv, tgt], dim=1))
 
 
 class ActorCritic(nn.Module):
