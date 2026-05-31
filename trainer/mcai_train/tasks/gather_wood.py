@@ -42,8 +42,13 @@ W_ATTACK_LOG = 0.15  # per-step bonus for ATTACKING an in-range log; rewards the
                      # sustained mining a random policy never discovers on its own.
 W_DEATH = 10.0       # one-time penalty applied when the agent dies (health<=0);
                      # death is a real, learnable negative signal, not engineered away.
-W_CAMERA = 0.003     # per-step penalty per degree of |yaw_delta|+|pitch_delta|, to
-                     # discourage chaotic spinning so the agent holds aim to finish a mine.
+# Camera smoothness (CAPS-style action-rate penalty, arXiv:2012.06644). The fix for
+# jittery "spinning" is to punish CHANGE in turn rate (jerk), not turning itself — a
+# smooth sustained scan costs ~0, but +10deg->-10deg oscillation costs a lot. A small
+# velocity term still discourages endless spinning; a small jump term discourages hopping.
+W_CAMERA = 0.0006    # per-deg penalty on |yaw_cmd|+|pitch_cmd| (velocity — discourage constant spin)
+W_CAMERA_JERK = 0.002  # per-deg penalty on |Δyaw_cmd|+|Δpitch_cmd| vs last tick (the anti-jitter term)
+W_JUMP = 0.001       # per-step penalty for pressing jump (discourage random hopping; real jumps still pay off)
 W_ANYITEM = 0.2    # Δ(total inventory count) — bootstraps "pick something up".
 
 
