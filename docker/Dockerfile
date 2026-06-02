@@ -8,22 +8,28 @@ FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MCAI_HOME=/workspace/mcai
-ENV JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-amd64
+# GraalVM (not a plain JDK) so the gym can be AOT-compiled to a native binary on the box.
+ENV JAVA_HOME=/opt/graalvm
 ENV PATH="$JAVA_HOME/bin:/usr/bin:${PATH}"
 
-# --- System packages: JDK 21 (Adoptium), Python 3.11 (deadsnakes), SSH, build tools ---
+# --- System packages: Python 3.11 (deadsnakes), SSH, build tools, zlib (native-image needs it) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common ca-certificates curl wget gnupg git unzip \
-        build-essential openssh-server rsync procps vim less \
-    && install -d /etc/apt/keyrings \
-    && wget -qO- https://packages.adoptium.net/artifactory/api/gpg/key/public \
-        | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb jammy main" \
-        > /etc/apt/sources.list.d/adoptium.list \
+        build-essential zlib1g-dev openssh-server rsync procps vim less \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
-        temurin-21-jdk python3.11 python3.11-venv python3.11-dev \
+        python3.11 python3.11-venv python3.11-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# --- GraalVM Community Edition 21 (bundles native-image) -> ./gradlew native works on the box ---
+ARG GRAALVM_VERSION=21.0.2
+RUN wget -qO /tmp/graalvm.tar.gz \
+      "https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-${GRAALVM_VERSION}/graalvm-community-jdk-${GRAALVM_VERSION}_linux-x64_bin.tar.gz" \
+    && tar -xzf /tmp/graalvm.tar.gz -C /opt \
+    && ln -s /opt/graalvm-community-openjdk-${GRAALVM_VERSION}* /opt/graalvm \
+    && rm /tmp/graalvm.tar.gz \
+    && java -version \
+    && (native-image --version || echo "WARN: native-image not on PATH — check the GraalVM build")
 
 WORKDIR ${MCAI_HOME}
 
