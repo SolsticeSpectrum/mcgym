@@ -65,6 +65,15 @@ cd /workspace/mcai/trainer
 .venv/bin/python export_ckpt.py runs/woodscale /workspace/mcai/weights/woodscale.onnx
 ```
 
+## Native (GraalVM) build — optional throughput lever
+The image ships **GraalVM CE 21 with `native-image`**, so the gym can be AOT-compiled to a native
+binary on the box (faster startup, ~1.5× steady-state — one of the scaling levers):
+```bash
+cd /workspace/mcai/minecraft-decomp
+./gradlew nativeServer        # GraalVM native-image build (slow + RAM-hungry; run on the box, not in `docker build`)
+```
+(Plain JVM training works without this; native is just the extra speedup.)
+
 ## Notes
 - Current trainable task is **gather-wood in wild real-terrain** (the proven pipeline). PvP and
   parkour need new task/reward modules (`mcai_train/tasks/`) + spawn modes — the environment here
