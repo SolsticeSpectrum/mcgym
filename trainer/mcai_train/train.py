@@ -240,8 +240,18 @@ def train(args: argparse.Namespace) -> None:
         def run_update(b):
             result["m"] = learner.update(b)
 
+        # Collect forwards run on a dedicated CUDA stream so they don't serialize behind the
+        # background update's kernels (default stream). Different modules + disjoint data, so the
+        # GPU can run both streams concurrently; the .cpu() inside the stream context blocks the
+        # host until the forward lands, which also enforces correct ordering (no cross-stream race).
+        collect_stream = torch.cuda.Stream() if str(device).startswith("cuda") else None
+
         def fwd(m, obs):
             with torch.no_grad():
+                if collect_stream is not None:
+                    with torch.cuda.stream(collect_stream):
+                        a, lp, v = m.get_action(obs_to_tensors(obs, device))
+                        return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
                 a, lp, v = m.get_action(obs_to_tensors(obs, device))
             return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
 

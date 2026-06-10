@@ -183,13 +183,17 @@ class ParallelVecEnv:
         self.n_agents = num_envs * n_agents  # total, for the buffer/model
         from concurrent.futures import ThreadPoolExecutor
 
+        # Persistent pool, reused for the concurrent boot and for step_recv. The per-gym recv
+        # (socket wait + 1.9 MB shm copy + numpy reward) releases the GIL, so threading the gyms
+        # overlaps those instead of summing them serially.
+        self._pool = ThreadPoolExecutor(max_workers=num_envs)
+
         def _make(e):
             return WoodEnv(n_agents, seed + e, registry, episode_len=episode_len,
                            curriculum=curriculum, arena=arena, gym_timeout_s=gym_timeout_s)
 
         # Concurrent boot: gyms generate their worlds on separate cores in parallel.
-        with ThreadPoolExecutor(max_workers=num_envs) as ex:
-            self.envs = list(ex.map(_make, range(num_envs)))
+        self.envs = list(self._pool.map(_make, range(num_envs)))
 
     def reset(self) -> np.ndarray:
         return np.concatenate([e.reset() for e in self.envs])
@@ -201,11 +205,13 @@ class ParallelVecEnv:
             e.step_send(a)
 
     def step_recv(self):
-        obs, rew, done = [], [], []
-        for e in self.envs:
-            o, r, d = e.step_recv()
-            obs.append(o); rew.append(r); done.append(d)
-        return np.concatenate(obs), np.concatenate(rew), np.concatenate(done)
+        # Recv all gyms concurrently (each releases the GIL on its socket wait + copy + reward).
+        res = list(self._pool.map(lambda e: e.step_recv(), self.envs))
+        return (
+            np.concatenate([r[0] for r in res]),
+            np.concatenate([r[1] for r in res]),
+            np.concatenate([r[2] for r in res]),
+        )
 
     def step(self, action_idx: np.ndarray):
         self.step_send(action_idx)
@@ -218,5 +224,6 @@ class ParallelVecEnv:
         ])
 
     def close(self) -> None:
+        self._pool.shutdown(wait=False)
         for e in self.envs:
             e.close()
