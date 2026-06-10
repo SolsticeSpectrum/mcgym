@@ -1,5 +1,4 @@
-//! end to end transport, rust stand-in for the python ShmTransport client drives a trivial
-//! gym over the real shm file + uds, header, RESET/STEP/CLOSE and the action->obs path
+//! end to end transport, a rust stand-in for the python ShmTransport drives a gym over shm + uds
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -41,6 +40,7 @@ impl Gym for EchoGym {
         self.tick = 0;
         self.write(None, obs);
     }
+
     fn step(&mut self, actions: &[u8], obs: &mut [u8]) {
         self.tick += 1;
         self.write(Some(actions), obs);

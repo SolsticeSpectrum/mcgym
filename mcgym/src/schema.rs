@@ -1,5 +1,4 @@
 //! obs/action byte layout, the cross language contract (schema/mcai_schema.yaml v1)
-//! packed little endian with no field alignment, pinned by golden fixtures in schema/fixtures
 
 pub const SCHEMA_VERSION:      i32 = 1;
 
@@ -142,7 +141,6 @@ impl<'a> LeReader<'a> {
 }
 
 impl Obs {
-    /// write into dst, must be exactly OBS_NBYTES
     pub fn encode_into(&self, dst: &mut [u8]) {
         assert_eq!(dst.len(), OBS_NBYTES, "obs dst wrong size");
         assert_eq!(self.voxel_blocks.len(), VOXEL_CELLS, "voxel_blocks len");
@@ -182,7 +180,6 @@ impl Obs {
         buf
     }
 
-    /// parse from exactly OBS_NBYTES
     pub fn decode(src: &[u8]) -> Self {
         assert_eq!(src.len(), OBS_NBYTES, "obs src wrong size");
         let mut r = LeReader::new(src);
@@ -218,7 +215,6 @@ impl Obs {
 }
 
 impl Action {
-    /// parse from exactly ACTION_NBYTES
     pub fn decode(src: &[u8]) -> Self {
         assert_eq!(src.len(), ACTION_NBYTES, "action src wrong size");
         let mut r = LeReader::new(src);

@@ -1,4 +1,4 @@
-"""Web monitor, vectors for every agent plus on demand voxel views, zero gym overhead"""
+"""web monitor, vectors for every agent plus on demand voxel views, zero gym overhead"""
 from __future__ import annotations
 
 import json
@@ -126,6 +126,7 @@ class Monitor:
 
             def do_GET(self):
                 from urllib.parse import parse_qs, urlparse
+                
                 url = urlparse(self.path)
                 if url.path == "/state":
                     self._send(json.dumps(mon._snap).encode(), "application/json")
@@ -144,10 +145,12 @@ class Monitor:
                 f   = (DIST / rel).resolve()
                 if not (str(f).startswith(str(DIST)) and f.is_file()):
                     f = DIST / "index.html"
+                    
                 ctype = {
                     ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
                     ".svg": "image/svg+xml", ".json": "application/json",
                 }.get(f.suffix, "application/octet-stream")
+                
                 self._send(f.read_bytes(), ctype)
 
         return Handler

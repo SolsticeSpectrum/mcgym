@@ -68,18 +68,16 @@ impl Registry {
         }
     }
 
-    /// mcai block int for a namespaced block name, -1 if unknown
     pub fn block_id(&self, name: &str) -> i32 {
         self.block_by_name.get(name).copied().unwrap_or(-1)
     }
 
-    /// mcai block int for a pumpkin block state id (obs hot path)
+    // obs hot path
     #[inline]
     pub fn block(&self, state_id: u16) -> i32 {
         self.state_to_block[state_id as usize]
     }
 
-    /// mcai item int for a namespaced item id, HIDDEN_BLOCK_ID if unknown
     pub fn item(&self, name: &str) -> i32 {
         self.item_by_name.get(name).copied().unwrap_or(HIDDEN_BLOCK_ID)
     }
