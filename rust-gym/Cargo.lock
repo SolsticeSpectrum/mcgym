@@ -1040,6 +1040,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-codecs"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "either",
  "serde_json",
@@ -1049,6 +1050,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-config"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "pumpkin-util",
  "serde",
@@ -1060,6 +1062,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-data"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "crc-fast",
  "phf",
@@ -1072,6 +1075,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-nbt"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "bytes",
  "cesu8",
@@ -1085,6 +1089,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-util"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "base64",
  "bytes",
@@ -1111,6 +1116,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-world"
 version = "0.1.0-dev+26.1"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin?rev=7bff068dff2f878fa2c7bfebb3bda97ddc17eb36#7bff068dff2f878fa2c7bfebb3bda97ddc17eb36"
 dependencies = [
  "arc-swap",
  "bitflags",
