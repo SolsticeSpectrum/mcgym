@@ -8,59 +8,62 @@ import numpy as np
 import pytest
 import torch
 
-from mcai_train import checkpoint
-from mcai_train.env.wood_env import WoodEnv
-from mcai_train.models.policy import ActorCritic, obs_to_tensors
-from mcai_train.ppo.buffer import RolloutBuffer
-from mcai_train.ppo.learner import PPOLearner
-from mcai_train.schema.registry import Registry
-from mcai_train.train import _model_sizes
+from mcgym import checkpoint
+from mcgym.env import Env
+from mcgym.tasks.wood import Wood
+from mcgym.models.policy import ActorCritic, tensors
+from mcgym.ppo.buffer import Buffer
+from mcgym.ppo.learner import Learner
+from mcgym.schema.registry import Registry
+from mcgym.train import sizes
 
-REGISTRY_PATH = pathlib.Path("/home/user/github/mcai/schema/registry.json")
+REGISTRY = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.json"
 
 
 @pytest.mark.slow
 def test_train_smoke():
-    n_agents = 2
-    rollout_len = 16
+    agents = 2
+    rollout = 16
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    registry = Registry.load(REGISTRY_PATH)
-    num_blocks, num_items = _model_sizes(REGISTRY_PATH)
+    registry = Registry.load(REGISTRY)
+    num_blocks, num_items = sizes(REGISTRY)
     model = ActorCritic(num_blocks, num_items).to(device)
-    learner = PPOLearner(model, epochs=2, minibatch=16, device=device)
+    learner = Learner(model, epochs=2, minibatch=16, device=device)
 
     env = None
-    cumulative_timesteps = 0
+    steps = 0
     with tempfile.TemporaryDirectory() as ckpt_dir:
         try:
-            env = WoodEnv(n_agents, seed=0, registry=registry, episode_len=50)
-            obs_struct = env.reset()
+            task = Wood(agents, registry)
+            task.eplen = 50
+            env = Env(agents, 0, task)
+            obs = env.reset()
 
             for _ in range(2):  # two rollouts
-                buf = RolloutBuffer(rollout_len, n_agents)
-                for _ in range(rollout_len):
+                buf = Buffer(rollout, agents)
+                for _ in range(rollout):
                     with torch.no_grad():
-                        idx, lp, val = model.get_action(obs_to_tensors(obs_struct, device))
+                        idx, lp, val = model.get_action(tensors(obs, device))
                     a = idx.cpu().numpy()
                     nxt, rew, done = env.step(a)
                     assert np.isfinite(rew).all(), "non-finite reward"
-                    buf.add(obs_struct, a, lp.cpu().numpy(), rew, val.cpu().numpy(), done)
-                    obs_struct = nxt
+                    buf.add(obs, a, lp.cpu().numpy(), rew, val.cpu().numpy(), done)
+                    obs = nxt
                 with torch.no_grad():
-                    last_v = model.get_action(obs_to_tensors(obs_struct, device))[2]
-                buf.compute_gae(last_v.cpu().numpy())
+                    last_v = model.get_action(tensors(obs, device))[2]
+                buf.gae(last_v.cpu().numpy())
                 metrics = learner.update(buf)
                 assert np.isfinite(metrics["policy_loss"])
                 assert np.isfinite(metrics["value_loss"])
-                cumulative_timesteps += rollout_len * n_agents
+                steps += rollout * agents
 
             checkpoint.save(
                 ckpt_dir, model, learner.optimizer,
-                {"cumulative_timesteps": cumulative_timesteps, "schema_version": 0},
+                {"steps": steps, "schema_version": 0},
             )
             assert (pathlib.Path(ckpt_dir) / "latest" / "model.pt").exists()
-            assert cumulative_timesteps == 2 * rollout_len * n_agents
+            assert steps == 2 * rollout * agents
         finally:
             if env is not None:
                 env.close()

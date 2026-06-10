@@ -6,15 +6,15 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 
-from mcai_train.models.action_space import BINS
-from mcai_train.ppo.buffer import RolloutBuffer
-from mcai_train.ppo.learner import PPOLearner
+from mcgym.models.actions import BINS
+from mcgym.ppo.buffer import Buffer
+from mcgym.ppo.learner import Learner
 
 
 def test_compute_gae_manual():
     # T=3, N=1, no terminals. gamma=1.0, lam=1.0 makes GAE the plain
     # discounted-return-minus-value, easy to check by hand.
-    buf = RolloutBuffer(rollout_len=3, n_agents=1)
+    buf = Buffer(rollout=3, agents=1)
     rewards = [1.0, 2.0, 3.0]
     values = [0.5, 0.5, 0.5]
     for t in range(3):
@@ -24,7 +24,7 @@ def test_compute_gae_manual():
     buf._t = 3
 
     last_value = 0.0
-    adv, ret = buf.compute_gae(np.array([last_value]), gamma=1.0, lam=1.0)
+    adv, ret = buf.gae(np.array([last_value]), gamma=1.0, lam=1.0)
 
     # delta_t = r_t + V(t+1) - V(t); gae_t = delta_t + gae_{t+1}
     # V(3)=last_value=0.
@@ -40,12 +40,12 @@ def test_compute_gae_manual():
 
 def test_compute_gae_with_terminal():
     # A terminal at t=1 must cut the bootstrap from t=2.
-    buf = RolloutBuffer(rollout_len=3, n_agents=1)
+    buf = Buffer(rollout=3, agents=1)
     buf.reward[:, 0] = [1.0, 1.0, 1.0]
     buf.value[:, 0] = [0.0, 0.0, 0.0]
     buf.done[:, 0] = [0.0, 1.0, 0.0]
     buf._t = 3
-    adv, _ = buf.compute_gae(np.array([0.0]), gamma=0.99, lam=0.95)
+    adv, _ = buf.gae(np.array([0.0]), gamma=0.99, lam=0.95)
 
     # t=2: delta = 1 + 0.99*0 - 0 = 1; gae2 = 1
     # t=1 done -> nonterminal=0: delta = 1; gae1 = 1
@@ -81,36 +81,39 @@ class _MultiDiscretePolicy(nn.Module):
         lp = sum(d.log_prob(a) for d, a in zip(dists, acts))
         return idx, lp, value
 
-    def evaluate(self, obs, action_idx):
+    def evaluate(self, obs, act):
         logits, value = self._forward(obs)
         dists = self._dists(logits)
-        cols = action_idx.unbind(dim=1)
+        cols = act.unbind(dim=1)
         lp = sum(d.log_prob(a) for d, a in zip(dists, cols))
         ent = sum(d.entropy() for d in dists)
         return lp, ent, value
 
 
-class _FlatBuffer(RolloutBuffer):
-    """RolloutBuffer variant storing a flat float obs tensor instead of OBS_DTYPE
+class _FlatBuffer(Buffer):
+    """Buffer variant storing a flat float obs tensor instead of OBS_DTYPE
     structured records, so the bandit test needs no Minecraft schema."""
 
-    def __init__(self, rollout_len, n_agents, obs_dim):
-        super().__init__(rollout_len, n_agents)
-        self.flat = np.zeros((rollout_len, n_agents, obs_dim), dtype=np.float32)
+    def __init__(self, rollout, agents, obs_dim):
+        super().__init__(rollout, agents)
+        self.flat = np.zeros((rollout, agents, obs_dim), dtype=np.float32)
         self.obs_dim = obs_dim
 
-    def add(self, obs_flat, action_idx, logprob, reward, value, done):
+    def add(self, obs_flat, act, logprob, reward, value, done):
         self.flat[self._t] = obs_flat
-        self.action_idx[self._t] = action_idx
+        self.act[self._t] = act
         self.logprob[self._t] = logprob
         self.reward[self._t] = reward
         self.value[self._t] = value
         self.done[self._t] = np.asarray(done, dtype=np.float32)
         self._t += 1
 
-    def iter_minibatches(self, batch_size, device):
+    def to_device(self, device):
+        return None
+
+    def batches(self, batch_size, device, data=None):
         flat = self.flat.reshape(-1, self.obs_dim)
-        actions = self.action_idx.reshape(-1, self.n_heads)
+        actions = self.act.reshape(-1, self.n_heads)
         logp = self.logprob.reshape(-1)
         val = self.value.reshape(-1)
         total = self.T * self.N
@@ -131,15 +134,15 @@ def test_bandit_learns():
     torch.manual_seed(0)
     np.random.seed(0)
 
-    n_agents = 16
-    rollout_len = 16
+    agents = 16
+    rollout = 16
     obs_dim = 1
     model = _MultiDiscretePolicy(obs_dim)
-    learner = PPOLearner(
+    learner = Learner(
         model, lr=3e-3, ent_coef=0.0, epochs=4, minibatch=64, device="cpu"
     )
 
-    obs_const = np.ones((n_agents, obs_dim), dtype=np.float32)
+    obs_const = np.ones((agents, obs_dim), dtype=np.float32)
 
     def mean_reward():
         with torch.no_grad():
@@ -149,8 +152,8 @@ def test_bandit_learns():
     start_reward = np.mean([mean_reward() for _ in range(20)])
 
     for _ in range(60):
-        buf = _FlatBuffer(rollout_len, n_agents, obs_dim)
-        for _ in range(rollout_len):
+        buf = _FlatBuffer(rollout, agents, obs_dim)
+        for _ in range(rollout):
             obs_t = torch.from_numpy(obs_const)
             with torch.no_grad():
                 idx, lp, val = model.get_action(obs_t)
@@ -161,11 +164,11 @@ def test_bandit_learns():
                 lp.numpy(),
                 reward,
                 val.numpy(),
-                np.ones(n_agents),  # bandit: every step terminal
+                np.ones(agents),  # bandit: every step terminal
             )
         with torch.no_grad():
             last_v = model.get_action(torch.from_numpy(obs_const))[2].numpy()
-        buf.compute_gae(last_v, gamma=0.99, lam=0.95)
+        buf.gae(last_v, gamma=0.99, lam=0.95)
         learner.update(buf)
 
     final_reward = np.mean([mean_reward() for _ in range(50)])

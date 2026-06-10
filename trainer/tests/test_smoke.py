@@ -1,5 +1,5 @@
-import mcai_train
+import mcgym
 
 
 def test_package_imports():
-    assert mcai_train.__version__ == "0.0.0"
+    assert mcgym.__version__ == "0.0.0"

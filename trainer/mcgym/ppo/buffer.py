@@ -9,21 +9,21 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from mcai_train.schema import spec
+from mcgym.schema import spec
 
 
-class RolloutBuffer:
-    def __init__(self, rollout_len: int, n_agents: int, n_heads: int = 7) -> None:
-        self.T = rollout_len
-        self.N = n_agents
+class Buffer:
+    def __init__(self, rollout: int, agents: int, n_heads: int = 7) -> None:
+        self.T = rollout
+        self.N = agents
         self.n_heads = n_heads
 
-        self.obs = np.zeros((rollout_len, n_agents), dtype=spec.OBS_DTYPE)
-        self.action_idx = np.zeros((rollout_len, n_agents, n_heads), dtype=np.int64)
-        self.logprob = np.zeros((rollout_len, n_agents), dtype=np.float32)
-        self.reward = np.zeros((rollout_len, n_agents), dtype=np.float32)
-        self.value = np.zeros((rollout_len, n_agents), dtype=np.float32)
-        self.done = np.zeros((rollout_len, n_agents), dtype=np.float32)
+        self.obs = np.zeros((rollout, agents), dtype=spec.OBS_DTYPE)
+        self.act = np.zeros((rollout, agents, n_heads), dtype=np.int64)
+        self.logprob = np.zeros((rollout, agents), dtype=np.float32)
+        self.reward = np.zeros((rollout, agents), dtype=np.float32)
+        self.value = np.zeros((rollout, agents), dtype=np.float32)
+        self.done = np.zeros((rollout, agents), dtype=np.float32)
 
         self._t = 0
         self.advantages = None
@@ -34,17 +34,17 @@ class RolloutBuffer:
         self.advantages = None
         self.returns = None
 
-    def add(self, obs_struct, action_idx, logprob, reward, value, done) -> None:
+    def add(self, obs, act, logprob, reward, value, done) -> None:
         t = self._t
-        self.obs[t] = obs_struct
-        self.action_idx[t] = np.asarray(action_idx)
+        self.obs[t] = obs
+        self.act[t] = np.asarray(act)
         self.logprob[t] = np.asarray(logprob)
         self.reward[t] = np.asarray(reward)
         self.value[t] = np.asarray(value)
         self.done[t] = np.asarray(done, dtype=np.float32)
         self._t += 1
 
-    def compute_gae(self, last_value, gamma: float = 0.99, lam: float = 0.95):
+    def gae(self, last_value, gamma: float = 0.99, lam: float = 0.95):
         """Generalised advantage estimation over the (T, N) grid.
 
         ``last_value`` is the critic's bootstrap value (N,) for the state after
@@ -72,13 +72,13 @@ class RolloutBuffer:
 
         The CPU-side strided gather out of the structured obs array + the H2D upload is the
         expensive part (~GBs); epochs only need a fresh shuffle, so the learner encodes once
-        and passes the result to iter_minibatches for every epoch.
+        and passes the result to batches for every epoch.
         """
-        from mcai_train.models.policy import obs_to_tensors
+        from mcgym.models.policy import tensors
 
         return {
-            "obs": obs_to_tensors(self.obs.reshape(-1), device),  # dict of (total, ...) tensors
-            "actions": torch.from_numpy(self.action_idx.reshape(-1, self.n_heads)).to(device),
+            "obs": tensors(self.obs.reshape(-1), device),  # dict of (total, ...) tensors
+            "actions": torch.from_numpy(self.act.reshape(-1, self.n_heads)).to(device),
             "logprob": torch.from_numpy(self.logprob.reshape(-1)).to(device),
             "adv": torch.from_numpy(self.advantages).to(device),
             "ret": torch.from_numpy(self.returns).to(device),
@@ -86,8 +86,8 @@ class RolloutBuffer:
             "total": self.T * self.N,
         }
 
-    def iter_minibatches(self, batch_size: int, device, data: dict | None = None):
-        """Yield shuffled minibatches of (obs_tensors, action_idx, old_logprob,
+    def batches(self, batch_size: int, device, data: dict | None = None):
+        """Yield shuffled minibatches of (obs_tensors, act, old_logprob,
         advantages, returns, old_value).
 
         Pass ``data`` (from to_device) to reuse one encode across all epochs; otherwise this

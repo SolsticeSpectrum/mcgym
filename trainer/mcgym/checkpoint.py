@@ -1,6 +1,6 @@
 """Checkpoint save/load with keep-N retention and best-effort ONNX export.
 
-A checkpoint is a directory ``step_<cumulative_timesteps>/`` holding model and
+A checkpoint is a directory ``step_<steps>/`` holding model and
 optimizer state_dicts plus a meta.json. A ``latest`` symlink always points at
 the newest checkpoint for easy resume.
 """
@@ -25,7 +25,7 @@ def save(directory, model, optimizer, meta: dict, keep_n: int = 5) -> pathlib.Pa
     root = pathlib.Path(directory)
     root.mkdir(parents=True, exist_ok=True)
 
-    step = int(meta["cumulative_timesteps"])
+    step = int(meta["steps"])
     ckpt_dir = root / f"step_{step}"
     ckpt_dir.mkdir(exist_ok=True)
 
@@ -79,7 +79,7 @@ def export_onnx(directory, model) -> pathlib.Path | None:
     """
     import numpy as np
 
-    from mcai_train.schema import spec
+    from mcgym.schema import spec
 
     root = pathlib.Path(directory)
     root.mkdir(parents=True, exist_ok=True)
@@ -87,9 +87,9 @@ def export_onnx(directory, model) -> pathlib.Path | None:
 
     device = next(model.parameters()).device
     dummy = np.zeros(1, dtype=spec.OBS_DTYPE)
-    from mcai_train.models.policy import obs_to_tensors
+    from mcgym.models.policy import tensors
 
-    tensors = obs_to_tensors(dummy, device)
+    t = tensors(dummy, device)
 
     class _Wrapper(torch.nn.Module):
         def __init__(self, m):
@@ -112,12 +112,12 @@ def export_onnx(directory, model) -> pathlib.Path | None:
         torch.onnx.export(
             wrapper,
             (
-                tensors["voxel"],
-                tensors["voxel_far"],
-                tensors["target_block"],
-                tensors["scalars"],
-                tensors["inv_item_id"],
-                tensors["inv_count"],
+                t["voxel"],
+                t["voxel_far"],
+                t["target_block"],
+                t["scalars"],
+                t["inv_item_id"],
+                t["inv_count"],
             ),
             str(out),
             input_names=["voxel", "voxel_far", "target_block", "scalars", "inv_item_id", "inv_count"],

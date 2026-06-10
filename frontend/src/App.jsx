@@ -5,7 +5,7 @@ import AgentView from './AgentView.jsx'
 const POLL_MS = 600
 
 // Top-down scatter of an env's agents. Fixed world->pixel scale around the env centroid so dots
-// don't jitter as agents move. Yellow = aimed at a log, green = holding wood, grey = neither.
+// don't jitter as agents move. Yellow = aimed at a log, green = scoring, grey = neither.
 function EnvMap({ agents, size = 150 }) {
   const ref = useRef(null)
   useEffect(() => {
@@ -20,7 +20,7 @@ function EnvMap({ agents, size = 150 }) {
     for (const a of agents) {
       const px = size / 2 + ((a.x - cx) / span) * size
       const pz = size / 2 + ((a.z - cz) / span) * size
-      ctx.fillStyle = a.wood > 0 ? '#a6e3a1' : a.look ? '#f9e2af' : '#5b6378'
+      ctx.fillStyle = a.score > 0 ? '#a6e3a1' : a.look ? '#f9e2af' : '#5b6378'
       ctx.beginPath(); ctx.arc(px, pz, 2.5, 0, 7); ctx.fill()
     }
   }, [agents, size])
@@ -45,24 +45,24 @@ export default function App() {
   const envs = useMemo(() => {
     if (!state || !state.x) return []
     const total = state.x.length
-    const nPer = state.n_per || total
+    const nPer = state.per || total
     const num = Math.max(1, Math.ceil(total / nPer))
     return Array.from({ length: num }, (_, e) => {
       const agents = []
       for (let i = 0; i < nPer; i++) {
         const g = e * nPer + i
         if (g >= total) break
-        agents.push({ i, x: state.x[g], z: state.z[g], wood: state.wood[g], look: state.look[g] })
+        agents.push({ i, x: state.x[g], z: state.z[g], score: state.score[g], look: state.look[g] })
       }
-      const meanWood = agents.length ? agents.reduce((s, a) => s + a.wood, 0) / agents.length : 0
-      return { id: e, agents, meanWood }
+      const meanScore = agents.length ? agents.reduce((s, a) => s + a.score, 0) / agents.length : 0
+      return { id: e, agents, meanScore }
     })
   }, [state])
 
   if (!state || !state.x) {
     return <div style={{ padding: 24 }}>Connecting to the monitor…</div>
   }
-  const nPer = state.n_per || state.x.length
+  const nPer = state.per || state.x.length
 
   const Header = (
     <div style={{ height: 44, padding: '0 16px', borderBottom: '1px solid #1e2230', display: 'flex', gap: 18, alignItems: 'center' }}>
@@ -88,7 +88,7 @@ export default function App() {
             <EnvMap agents={env.agents} />
             <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
               <span>env {env.id}</span>
-              <span style={{ color: '#9aa4bf' }}>wood {env.meanWood.toFixed(1)}</span>
+              <span style={{ color: '#9aa4bf' }}>score {env.meanScore.toFixed(1)}</span>
             </div>
           </div>
         ))}

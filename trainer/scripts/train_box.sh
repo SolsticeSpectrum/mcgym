@@ -1,52 +1,39 @@
 #!/usr/bin/env bash
-# Scaled training launch for the GPU box: Rust gym + K-cohort async collect + GPU pipeline.
-#
-# Defaults are the measured-best config for the RTX 6000 box (32 gyms x 64 agents = 2048,
-# rollout 128, minibatch 16384, 2 epochs, 4 cohorts, scale-3 model, bf16+compile via
-# MCAI_BF16/MCAI_COMPILE): ~14.7k steps/s with the two rollout buffers fitting a 64 GiB
-# memory cap. Batch scaling (agents/rollout/minibatch) does NOT invalidate an existing
-# checkpoint; only growing the model (MODEL_SCALE) would. Override any knob via env var.
+# training launch for the gpu box, defaults are the measured best config for
+# the rtx 6000 (2048 agents at ~14.7k steps/s under a 64g memory cap), batch
+# knobs dont invalidate a checkpoint, only SCALE would
 set -euo pipefail
 cd "$(dirname "$0")/.."  # -> trainer/
 
 REPO="$(cd .. && pwd)"
-# Build once: (cd "$REPO/mcgym" && cargo build --release)
 export MCGYM="${MCGYM:-$REPO/mcgym/target/release/mcgym}"
-export MCAI_GYM_SPACING="${MCAI_GYM_SPACING:-128}"   # blocks between agents within a gym
+export MCGYM_SPACING="${MCGYM_SPACING:-128}"   # blocks between agents within a gym
+export MCGYM_BF16="${MCGYM_BF16:-1}"
+export MCGYM_COMPILE="${MCGYM_COMPILE:-1}"
 export PYTHONUNBUFFERED=1
 
 if [[ ! -x "$MCGYM" ]]; then
-  echo "Rust gym binary not found at $MCGYM — build it: (cd $REPO/mcgym && cargo build --release)" >&2
+  echo "mcgym binary not found at $MCGYM, build it with cargo build --release" >&2
   exit 1
 fi
 
-NUM_ENVS="${NUM_ENVS:-32}"
-N_AGENTS="${N_AGENTS:-64}"
-ROLLOUT="${ROLLOUT:-128}"
-MINIBATCH="${MINIBATCH:-16384}"
-EPOCHS="${EPOCHS:-2}"
-MODEL_SCALE="${MODEL_SCALE:-3}"
-ASYNC="${ASYNC:-1}"          # K-cohort async collect on by default (ASYNC= to disable)
-COHORTS="${COHORTS:-4}"
-RUN="${RUN:-woodopt}"
+TASK="${TASK:-wood}"
+RUN="${RUN:-$TASK}"
 
-echo "[train_box] gym=$MCGYM agents=$((NUM_ENVS*N_AGENTS)) minibatch=$MINIBATCH rollout=$ROLLOUT pipeline=on"
-exec .venv/bin/python -m mcai_train.train \
-  --num-envs "$NUM_ENVS" \
-  --n-agents "$N_AGENTS" \
-  --rollout-len "$ROLLOUT" \
-  --minibatch "$MINIBATCH" \
-  --model-scale "$MODEL_SCALE" \
-  --epochs "$EPOCHS" \
+exec .venv/bin/python -m mcgym.train \
+  --task "$TASK" \
+  --num-envs "${NUM_ENVS:-32}" \
+  --agents "${AGENTS:-64}" \
+  --rollout "${ROLLOUT:-128}" \
+  --minibatch "${MINIBATCH:-16384}" \
+  --scale "${SCALE:-3}" \
+  --epochs "${EPOCHS:-2}" \
   --lr "${LR:-3e-4}" \
   --device cuda \
-  --arena wild \
-  ${ASYNC:+--async-collect} \
-  ${COHORTS:+--async-cohorts "$COHORTS"} \
-  ${PIPELINE:+--pipeline} \
-  --run-name "$RUN" \
-  --checkpoint-dir "${CKPT_DIR:-runs/$RUN}" \
-  --checkpoint-every "${CKPT:-1000000}" \
-  --monitor-port "${MONITOR_PORT:-9080}" \
-  --total-timesteps "${TOTAL:-1000000000}" \
+  --cohorts "${COHORTS:-4}" \
+  --run "$RUN" \
+  --ckpt-dir "${CKPT_DIR:-runs/$RUN}" \
+  --ckpt-every "${CKPT_EVERY:-1000000}" \
+  --monitor "${MONITOR_PORT:-9080}" \
+  --total "${TOTAL:-1000000000}" \
   ${RESUME:+--resume}
