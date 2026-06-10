@@ -1,4 +1,4 @@
-"""Generic env over the gym, task plugs in via mcgym.tasks.Task"""
+"""generic env over the gym, task plugs in via mcgym.tasks.Task"""
 from __future__ import annotations
 
 import pathlib
@@ -16,7 +16,7 @@ from .transport import Transport
 
 
 class Env:
-    """One gym process, N agents in one world stepped in lockstep"""
+    """one gym process, N agents in one world stepped in lockstep"""
 
     def __init__(self, agents: int, seed: int, task: Task, timeout: float = 180.0) -> None:
         self.agents = agents
@@ -88,14 +88,14 @@ class Env:
 
 
 class VecEnv:
-    """M gyms stepped as one M*per agent batch, gyms tick in parallel across cores"""
+    """m gyms stepped as one M*per agent batch, gyms tick in parallel across cores"""
 
     def __init__(self, num_envs, agents, seed, task, timeout=180.0):
         self.num_envs = num_envs
         self.per      = agents
         self.agents   = num_envs * agents
 
-        # pool reused for boot and recv, both release the GIL so gyms overlap
+        # pool reused for boot and recv, both release the gil so gyms overlap
         self._pool = ThreadPoolExecutor(max_workers=num_envs)
         self.envs = list(self._pool.map(
             lambda e: Env(agents, seed + e, task(agents), timeout=timeout),

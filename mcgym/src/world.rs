@@ -146,6 +146,7 @@ impl World {
     ) {
         let r    = VOXEL_RADIUS as i32;
         let edge = VOXEL_EDGE as i32;
+        
         let mut cur:       Option<(i32, i32)>  = None;
         let mut cur_chunk: Option<&ProtoChunk> = None;
         for dy in -r..=r {
@@ -167,7 +168,7 @@ impl World {
                         cur       = Some(ck);
                         cur_chunk = self.chunks.get(&ck);
                     }
-                    
+
                     let sid  = cur_chunk.map_or(0, |c| c.get_block_state_raw(wx & 15, local_y, wz & 15));
                     out[idx] = reg.block(sid);
                 }
