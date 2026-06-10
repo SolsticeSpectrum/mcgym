@@ -1,73 +1,72 @@
-# MCAI training — GPU Docker box
+# MCAI GPU box — one-command training deployment
 
-Packages the full stack so it runs anywhere with an NVIDIA GPU:
-- **Gym**: patched vanilla Minecraft server (JDK 21), headless, real physics/worldgen/mining.
-- **Trainer**: Python 3.11 + PyTorch 2.5.1 (CUDA 12.1) PPO, ONNX export.
-- **SSH** so you can connect and drive it.
+Everything needed to turn a fresh GPU host into a running MCAI training box:
+a Selkies web desktop, key-only SSH, and the wood task training automatically
+with the live monitor — from three files and one `docker compose up -d`.
 
-The decompiled+patched server sources are baked in; the image only compiles the gym, it does
-**not** re-run the heavy decompile. The Python venv is rebuilt fresh with pinned torch-cu121.
-
-## Host prerequisites (Ricman)
-- NVIDIA driver (recent enough for CUDA 12.1) + **nvidia-container-toolkit** installed.
-  Verify: `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi`
-- ~10 GB disk for the image; a few GB more for checkpoints.
-
-## Build
-From the repo root (the build context must be the repo root, not `docker/`):
-```bash
-docker build -f docker/Dockerfile -t mcai-train .
-```
-(Needs network during build: gradle 8.10 + Mojang/maven deps + the torch cu121 wheel.)
-
-## Run
-**Key gotcha:** the gym uses `/dev/shm` for its Python↔gym transport, and Docker's default
-`/dev/shm` is only 64 MB — you **must** pass `--shm-size`.
+## Quickstart (host admin)
 
 ```bash
-docker run -d --name mcai \
-  --gpus '"device=0"' \          # one RTX 6000; use --gpus all for both
-  --shm-size=4g \                 # REQUIRED for the shm transport
-  -p 2222:22 -p 8088:8088 \       # ssh + web monitor
-  -e SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
-  -v $PWD/runs:/workspace/mcai/trainer/runs \   # checkpoints on the host
-  mcai-train
-```
-or `SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" docker compose -f docker/docker-compose.yml up -d --build`.
-
-## Connect & train (you)
-```bash
-ssh -p 2222 root@<box>            # key-based (password auth is off)
-# optional: tunnel the live monitor ->  ssh -p 2222 -L 8088:localhost:8088 root@<box>
-
-cd /workspace/mcai
-AGENTS=64 NUM_ENVS=8 RUN=woodscale ./train.sh    # 8 gyms x 64 = 512 agents
-# resume:  EXTRA="--resume" RUN=woodscale ./train.sh
-```
-Open http://localhost:8088 (through the tunnel) for the live agent monitor.
-
-## Scaling
-The **gym is CPU-bound** (real ServerPlayers), so throughput scales with **`NUM_ENVS`** —
-parallel gym processes. Set it toward the box's usable core count; `AGENTS` is players per gym.
-The RTX 6000 removes the old GPU-update bottleneck, so push agents until the cores saturate
-(watch `sps` and `collect=` in the log). RAM: each agent loads ~a 5×5 chunk island; budget a
-few GB per ~50 agents. Start e.g. `AGENTS=64 NUM_ENVS=8`, then tune.
-
-## Checkpoints / syncing home
-Checkpoints land in `trainer/runs/<run>/` (mounted to `./runs` on the host). To pull them home
-hourly (Ricman's suggestion), from your machine:
-```bash
-while true; do rsync -az -e 'ssh -p 2222' root@<box>:/workspace/mcai/trainer/runs/ ./runs-home/; sleep 3600; done
-```
-Export a checkpoint to ONNX (for the Fabric mod):
-```bash
-cd /workspace/mcai/trainer
-.venv/bin/python export_ckpt.py runs/woodscale /workspace/mcai/weights/woodscale.onnx
+# on the host, in any folder:
+#   docker-compose.yml  bootstrap.sh  .env   (copy .env.example -> .env, fill it in)
+docker compose up -d
 ```
 
-## Notes
-- Current trainable task is **gather-wood in wild real-terrain** (the proven pipeline). PvP and
-  parkour need new task/reward modules (`mcai_train/tasks/`) + spawn modes — the environment here
-  is ready for them; they're the next code to write.
-- One RTX 6000 (48 GB) is far more than the ~0.6 M-param model needs; the win is removing the
-  update stall, not VRAM. Multi-GPU isn't wired up yet (use one).
+That's it. On every `up`:
+
+1. **mcai-init** (busybox, exits immediately) writes the SSH `authorized_keys`
+   (from `.env`) and two supervisord program configs into `${DATA_DIR}/mcai-init`.
+2. **xgl** (the Selkies desktop image) starts; its supervisord picks up the two
+   programs, both backed by the single `bootstrap.sh`:
+   - **ssh** — dropbear on port `2222` (key-only; the host key persists across
+     recreates so clients never see a host-key warning)
+   - **train** — installs rustup + a Python venv with CUDA torch into
+     `/drive2/tools` (first boot only; cached afterwards), `git clone`s the repo
+     (`REPO_URL`), `cargo build`s the Rust gym, and launches the wood task in an
+     auto-resume/auto-restart loop
+
+After the first boot (toolchain download + gym build, ~10–20 min) the box is
+live. Later boots skip straight to training in under a minute, resuming from
+the latest checkpoint.
+
+| What | Where |
+|---|---|
+| Web desktop | `http://<host>:8080` (user `ubuntu`, password from `.env`) |
+| Training monitor | `http://<host>:9080` |
+| SSH | `ssh -p 2222 ubuntu@<host>` (keys from `.env`) |
+| Training log | `/drive2/train.log` (also `docker exec xgl tail -f /drive2/train.log`) |
+| SSH program log | `/tmp/mcai-ssh.log` inside the container |
+
+## Persistent layout (`${DATA_DIR}` = `/drive2` in-container)
+
+The container is disposable; only `/drive2` survives recreates:
+
+```
+/drive2/
+  tools/      rustup + cargo + python venv (torch) + pip cache
+  mcai/       git clone of the repo (re-cloned/reset on boot — keep no state here)
+  runs/       checkpoints per run name (this is the valuable part)
+  xgl-ssh/    dropbear host key + cached debs
+  mcai-init/  files written by the init service on each `up`
+  train.log   training output
+```
+
+## Notes & quirks
+
+- **Private repo**: embed a GitHub fine-grained PAT (read-only Contents) in
+  `REPO_URL` — see `.env.example`.
+- **`network_mode: host`**: the compose `ports:` section is decorative; selkies
+  (8080), the monitor (9080) and dropbear (2222) bind directly on the host.
+  Port 22 on the host IP is the host's own sshd, not the container.
+- **The image has no real root**: `/usr/bin/sudo` is a fakeroot symlink. The
+  bootstrap uses `fakeroot apt-get` for packages; the real setuid sudo is
+  `sudo-root` (container `PASSWD`). OpenSSH sshd cannot run here (privsep
+  chroot gets EPERM) — that's why dropbear.
+- **Resources directly buy throughput**: at the default 2048 agents the
+  trainer's two rollout buffers need ~21 GB and the 32 gym processes want a
+  core each. If the host has headroom, raise `MEM_LIMIT`/`CPUS` in `.env` (and
+  `NUM_ENVS` to match the cores). The tuned defaults hit ~14.7k steps/s on an
+  RTX 6000 with `CPUS=12`/`MEM_LIMIT=64g`.
+- **Changing training knobs**: edit `.env`, then `docker compose up -d`
+  (recreates the init files) and restart training:
+  `docker exec xgl supervisorctl restart mcai-train`.

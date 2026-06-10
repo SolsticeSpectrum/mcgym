@@ -42,9 +42,15 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     """
     obs = obs_struct_batch
 
-    voxel = np.ascontiguousarray(obs["voxel_blocks"]).astype(np.int64)
-    voxel_far = np.ascontiguousarray(obs["voxel_far"]).astype(np.int64)
-    target_block = np.ascontiguousarray(obs["target_block"]).astype(np.int64)
+    # Keep the voxel/id grids as int32 for the CPU->GPU transfer (they are i32 in the schema);
+    # upcast to long on the GPU inside the encoder. Transferring int32 instead of int64 halves
+    # the H2D traffic, which dominates both collect and the per-minibatch update re-encode.
+    # .copy(): structured-array field views always need the copy anyway, and unlike
+    # ascontiguousarray it also fixes the misaligned strides a batch-of-1 view reports
+    # (torch.from_numpy rejects those — hit by the ONNX export path).
+    voxel = obs["voxel_blocks"].copy()
+    voxel_far = obs["voxel_far"].copy()
+    target_block = obs["target_block"].copy()
 
     vel = np.ascontiguousarray(obs["vel"]).astype(np.float32)
     yaw = np.ascontiguousarray(obs["yaw"]).astype(np.float32)
@@ -56,7 +62,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     target_in_range = np.ascontiguousarray(obs["target_in_range"]).astype(np.float32)
     target_face = np.ascontiguousarray(obs["target_face"]).astype(np.int64)
 
-    inv_item_id = np.ascontiguousarray(obs["inv_item_id"]).astype(np.int64)
+    inv_item_id = obs["inv_item_id"].copy()
     inv_count = np.ascontiguousarray(obs["inv_count"]).astype(np.float32)
 
     yaw_r = np.deg2rad(yaw)
@@ -94,73 +100,82 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
 
 
 class ObsEncoder(nn.Module):
-    def __init__(self, num_blocks: int, num_items: int) -> None:
+    def __init__(self, num_blocks: int, num_items: int, scale: int = 1) -> None:
         super().__init__()
-        self.block_embed = nn.Embedding(num_blocks, EMBED_DIM)
-        self.item_embed = nn.Embedding(num_items, EMBED_DIM)
+        # `scale` multiplies every width. scale=1 is the original 646k-param model (tuned for a
+        # GTX 1060); on a big GPU raise it (e.g. 4-8) for more capacity + far more GPU work per
+        # forward, which both fills VRAM and closes the collect-phase GPU-idle gaps.
+        self.scale = scale
+        embed_dim = EMBED_DIM * scale
+        c1, c2 = 8 * scale, 16 * scale
+        self.embed_dim = embed_dim
+        self.block_embed = nn.Embedding(num_blocks, embed_dim)
+        self.item_embed = nn.Embedding(num_items, embed_dim)
         self.num_blocks = num_blocks
         self.num_items = num_items
 
-        # Near and far voxel grids each get their own 3D CNN (distinct weights) but
-        # share the block embedding table above. 17 -> 9 -> 5 with stride-2 convs.
-        # Channels kept small (8->16): block-id geometry is low-capacity, and two 3D CNNs
-        # on a weak GPU dominate the PPO update time, so heavier channels just stall training.
+        # Near and far voxel grids each get their own 3D CNN (distinct weights) but share the
+        # block embedding table above. 17 -> 9 -> 5 with stride-2 convs.
         def _voxel_cnn():
             return nn.Sequential(
-                nn.Conv3d(EMBED_DIM, 8, kernel_size=3, stride=2, padding=1),
+                nn.Conv3d(embed_dim, c1, kernel_size=3, stride=2, padding=1),
                 nn.ReLU(),
-                nn.Conv3d(8, 16, kernel_size=3, stride=2, padding=1),
+                nn.Conv3d(c1, c2, kernel_size=3, stride=2, padding=1),
                 nn.ReLU(),
             )
 
         self.voxel_conv = _voxel_cnn()
         self.voxel_conv_far = _voxel_cnn()
-        conv_out = 16 * 5 * 5 * 5  # 5*5*5*16 = 2000
-        self.voxel_fc = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
-        self.voxel_fc_far = nn.Sequential(nn.Linear(conv_out, 128), nn.ReLU())
+        conv_out = c2 * 5 * 5 * 5
+        self.voxel_fc = nn.Sequential(nn.Linear(conv_out, 128 * scale), nn.ReLU())
+        self.voxel_fc_far = nn.Sequential(nn.Linear(conv_out, 128 * scale), nn.ReLU())
 
-        self.scalar_fc = nn.Sequential(nn.Linear(SCALAR_DIM, 64), nn.ReLU())
-        self.inv_fc = nn.Sequential(nn.Linear(EMBED_DIM, 32), nn.ReLU())
+        self.scalar_fc = nn.Sequential(nn.Linear(SCALAR_DIM, 64 * scale), nn.ReLU())
+        self.inv_fc = nn.Sequential(nn.Linear(embed_dim, 32 * scale), nn.ReLU())
         # Identity of the block under the crosshair (shares the block embedding) so the
         # policy can tell a trunk from leaves when it has something in range.
-        self.target_fc = nn.Sequential(nn.Linear(EMBED_DIM, 16), nn.ReLU())
+        self.target_fc = nn.Sequential(nn.Linear(embed_dim, 16 * scale), nn.ReLU())
 
-        self.fuse = nn.Sequential(nn.Linear(128 + 128 + 64 + 32 + 16, LATENT_DIM), nn.ReLU())
+        self.latent_dim = LATENT_DIM * scale
+        self.fuse = nn.Sequential(
+            nn.Linear((128 + 128 + 64 + 32 + 16) * scale, self.latent_dim), nn.ReLU()
+        )
 
     def encode(self, obs_tensors: dict) -> torch.Tensor:
-        voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1)
+        voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1).long()
         b = voxel.shape[0]
         v = self.block_embed(voxel)  # (B, 4913, 8)
-        v = v.permute(0, 2, 1).reshape(b, EMBED_DIM, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
+        v = v.permute(0, 2, 1).reshape(b, self.embed_dim, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
         v = self.voxel_conv(v).reshape(b, -1)
         v = self.voxel_fc(v)
 
-        voxel_far = obs_tensors["voxel_far"].clamp(0, self.num_blocks - 1)
+        voxel_far = obs_tensors["voxel_far"].clamp(0, self.num_blocks - 1).long()
         vf = self.block_embed(voxel_far)
-        vf = vf.permute(0, 2, 1).reshape(b, EMBED_DIM, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
+        vf = vf.permute(0, 2, 1).reshape(b, self.embed_dim, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
         vf = self.voxel_conv_far(vf).reshape(b, -1)
         vf = self.voxel_fc_far(vf)
 
         s = self.scalar_fc(obs_tensors["scalars"])
 
-        inv_ids = obs_tensors["inv_item_id"].clamp(0, self.num_items - 1)
+        inv_ids = obs_tensors["inv_item_id"].clamp(0, self.num_items - 1).long()
         inv_emb = self.item_embed(inv_ids)  # (B, 41, 8)
         weight = torch.log1p(obs_tensors["inv_count"]).unsqueeze(-1)  # (B, 41, 1)
         inv = (inv_emb * weight).sum(dim=1)  # (B, 8)
         inv = self.inv_fc(inv)
 
-        tb = obs_tensors["target_block"].clamp(0, self.num_blocks - 1)
+        tb = obs_tensors["target_block"].clamp(0, self.num_blocks - 1).long()
         tgt = self.target_fc(self.block_embed(tb))  # (B, 16)
 
         return self.fuse(torch.cat([v, vf, s, inv, tgt], dim=1))
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, num_blocks: int, num_items: int) -> None:
+    def __init__(self, num_blocks: int, num_items: int, scale: int = 1) -> None:
         super().__init__()
-        self.encoder = ObsEncoder(num_blocks, num_items)
-        self.policy_head = nn.Linear(LATENT_DIM, sum(BINS))
-        self.value_head = nn.Linear(LATENT_DIM, 1)
+        self.encoder = ObsEncoder(num_blocks, num_items, scale=scale)
+        latent = self.encoder.latent_dim
+        self.policy_head = nn.Linear(latent, sum(BINS))
+        self.value_head = nn.Linear(latent, 1)
         self.bins = list(BINS)
 
     def forward(self, obs_tensors: dict):

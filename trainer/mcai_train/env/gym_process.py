@@ -1,12 +1,14 @@
 """Launch the Java Minecraft gym in external-step transport mode."""
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import threading
 import time
 
-GYM_REPO = pathlib.Path("/home/user/github/mcai/minecraft-decomp")
+# Repo-relative (gym_process.py -> env -> mcai_train -> trainer -> repo root -> minecraft-decomp).
+GYM_REPO = pathlib.Path(__file__).resolve().parents[3] / "minecraft-decomp"
 READY_PREFIX = "MCAI_TRANSPORT_READY"
 
 
@@ -31,25 +33,43 @@ def launch_gym(
     or the timeout elapses. World generation makes first boot slow, hence the
     generous default timeout. Returns the running process; the caller owns it.
     """
-    gradlew = GYM_REPO / "gradlew"
-    if not gradlew.exists():
-        raise FileNotFoundError(f"gradlew not found at {gradlew}")
+    # Rust gym (mcai-gym binary) when MCAI_RUST_GYM points at it; else the Java gradle gym.
+    rust_bin = os.environ.get("MCAI_RUST_GYM")
+    if rust_bin:
+        cmd = [
+            rust_bin,
+            "--shm", shm_path,
+            "--sock", sock_path,
+            "--agents", str(n_agents),
+            "--seed", str(seed),
+            "--spacing", os.environ.get("MCAI_GYM_SPACING", "64"),
+        ]
+        if arena:
+            cmd += ["--arena", arena]
+        if curriculum:
+            cmd += ["--curriculum", curriculum]
+        cwd = None
+    else:
+        gradlew = GYM_REPO / "gradlew"
+        if not gradlew.exists():
+            raise FileNotFoundError(f"gradlew not found at {gradlew}")
+        cmd = [
+            str(gradlew),
+            "runGymTransport",
+            f"-PshmPath={shm_path}",
+            f"-PsockPath={sock_path}",
+            f"-Pagents={n_agents}",
+            f"-Pseed={seed}",
+            f"-Pcurriculum={curriculum}",
+            f"-Parena={arena}",
+            "--offline",
+            "--console=plain",
+        ]
+        cwd = str(GYM_REPO)
 
-    cmd = [
-        str(gradlew),
-        "runGymTransport",
-        f"-PshmPath={shm_path}",
-        f"-PsockPath={sock_path}",
-        f"-Pagents={n_agents}",
-        f"-Pseed={seed}",
-        f"-Pcurriculum={curriculum}",
-        f"-Parena={arena}",
-        "--offline",
-        "--console=plain",
-    ]
     proc = subprocess.Popen(
         cmd,
-        cwd=str(GYM_REPO),
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

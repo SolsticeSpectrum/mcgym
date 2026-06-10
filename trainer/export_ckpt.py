@@ -3,15 +3,23 @@ import pathlib
 import shutil
 import sys
 
-from mcai_train.checkpoint import export_onnx, load_latest
-from mcai_train.models.policy import ActorCritic
+import torch
+
+from mcai_train.checkpoint import _checkpoint_dirs, export_onnx, load_latest
+from mcai_train.models.policy import EMBED_DIM, ActorCritic
 from mcai_train.train import _model_sizes, REGISTRY_PATH
 
 run_dir = sys.argv[1]
 out = pathlib.Path(sys.argv[2])
 
 num_blocks, num_items = _model_sizes(REGISTRY_PATH)
-model = ActorCritic(num_blocks, num_items)
+# Infer --model-scale from the checkpoint itself (the embed width is EMBED_DIM * scale),
+# so exports work for any run without knowing its training args.
+ckpt = _checkpoint_dirs(pathlib.Path(run_dir))[-1] / "model.pt"
+state = torch.load(ckpt, map_location="cpu", weights_only=True)
+scale = state["encoder.block_embed.weight"].shape[1] // EMBED_DIM
+print(f"inferred model scale={scale}")
+model = ActorCritic(num_blocks, num_items, scale=scale)
 meta = load_latest(run_dir, model, None)
 if meta is None:
     raise SystemExit(f"no checkpoint in {run_dir}")

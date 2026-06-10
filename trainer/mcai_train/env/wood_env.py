@@ -142,11 +142,9 @@ class WoodEnv:
         return obs_struct, reward, done
 
     def wood_held(self, obs_struct: np.ndarray) -> np.ndarray:
-        """Per-agent total wood currently held (for logging)."""
-        return np.array(
-            [wood_count(obs_struct[i], self._log_ids) for i in range(self.n_agents)],
-            dtype=np.int64,
-        )
+        """Per-agent total wood currently held (for logging). Vectorised over the batch."""
+        mask = np.isin(obs_struct["inv_item_id"], self._log_id_arr)
+        return (mask * obs_struct["inv_count"]).sum(axis=1).astype(np.int64)
 
     def close(self) -> None:
         try:
@@ -171,15 +169,11 @@ class ParallelVecEnv:
     single GPU forward — the rlgym-ppo multi-process pattern, here over our shm
     transport. The single-process WoodEnv path is unchanged.
 
-    Correct, but NO throughput win on this hardware. Profiled (py-spy): the logic is
-    fine and it does NOT deadlock — 2 gyms x 8 = ~35 ms/step, 2 gyms x 96 = ~280
-    ms/step (192 agents -> ~685 sps, WORSE per-agent than single-process's ~1083 sps
-    at 100 agents). The gym tick for ~96 real-physics ServerPlayers is CPU-heavy, and
-    a 6-core box can't run enough gyms concurrently to amortize it (the step profile
-    is split across torch forward + socket recv waiting on the gyms, no Python
-    hotspot). Net: this box is CPU-bound on per-agent vanilla physics; multiprocess
-    helps only with more cores/machines or cheaper per-agent physics. Use --num-envs 1
-    (default, supported). ParallelVecEnv is kept for multi-machine / future use.
+    One gym process = one single-threaded world = one core, so throughput scales with num_envs up
+    to the core count. (An earlier profile found no win — but that was a 6-core box with the slow
+    Java gym; with the cheap Rust tick on a many-core box, more gyms is the throughput / "tick-race"
+    lever.) Boots all gyms concurrently — each WoodEnv blocks on its gym becoming ready, so threads
+    overlap the world generation across cores and startup is ~one gym's boot, not the sum.
     """
 
     def __init__(self, num_envs, n_agents, seed, registry, episode_len=256,
@@ -187,25 +181,41 @@ class ParallelVecEnv:
         self.num_envs = num_envs
         self.n_per = n_agents
         self.n_agents = num_envs * n_agents  # total, for the buffer/model
-        self.envs = [
-            WoodEnv(n_agents, seed + e, registry, episode_len=episode_len,
-                    curriculum=curriculum, arena=arena, gym_timeout_s=gym_timeout_s)
-            for e in range(num_envs)
-        ]
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Persistent pool, reused for the concurrent boot and for step_recv. The per-gym recv
+        # (socket wait + 1.9 MB shm copy + numpy reward) releases the GIL, so threading the gyms
+        # overlaps those instead of summing them serially.
+        self._pool = ThreadPoolExecutor(max_workers=num_envs)
+
+        def _make(e):
+            return WoodEnv(n_agents, seed + e, registry, episode_len=episode_len,
+                           curriculum=curriculum, arena=arena, gym_timeout_s=gym_timeout_s)
+
+        # Concurrent boot: gyms generate their worlds on separate cores in parallel.
+        self.envs = list(self._pool.map(_make, range(num_envs)))
 
     def reset(self) -> np.ndarray:
         return np.concatenate([e.reset() for e in self.envs])
 
-    def step(self, action_idx: np.ndarray):
-        action_idx = np.asarray(action_idx)
-        chunks = np.split(action_idx, self.num_envs)  # each (n_per, 7)
+    def step_send(self, action_idx: np.ndarray) -> None:
+        """Fire all gyms' ticks without waiting (so they tick concurrently across cores)."""
+        chunks = np.split(np.asarray(action_idx), self.num_envs)  # each (n_per, n_heads)
         for e, a in zip(self.envs, chunks):
             e.step_send(a)
-        obs, rew, done = [], [], []
-        for e in self.envs:
-            o, r, d = e.step_recv()
-            obs.append(o); rew.append(r); done.append(d)
-        return np.concatenate(obs), np.concatenate(rew), np.concatenate(done)
+
+    def step_recv(self):
+        # Recv all gyms concurrently (each releases the GIL on its socket wait + copy + reward).
+        res = list(self._pool.map(lambda e: e.step_recv(), self.envs))
+        return (
+            np.concatenate([r[0] for r in res]),
+            np.concatenate([r[1] for r in res]),
+            np.concatenate([r[2] for r in res]),
+        )
+
+    def step(self, action_idx: np.ndarray):
+        self.step_send(action_idx)
+        return self.step_recv()
 
     def wood_held(self, obs_struct: np.ndarray) -> np.ndarray:
         return np.concatenate([
@@ -214,5 +224,6 @@ class ParallelVecEnv:
         ])
 
     def close(self) -> None:
+        self._pool.shutdown(wait=False)
         for e in self.envs:
             e.close()
