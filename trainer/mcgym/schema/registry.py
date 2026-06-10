@@ -1,4 +1,4 @@
-"""id to name registry for blocks and items."""
+"""id to name registry for blocks and items"""
 from __future__ import annotations
 
 import json
@@ -12,21 +12,23 @@ from dataclasses import dataclass
 @dataclass
 class Registry:
     _block_to_id: dict[str, int]
-    _item_to_id: dict[str, int]
+    _item_to_id:  dict[str, int]
     # merged items over blocks, kept for legacy id_of/name_of/size
-    _name_to_id: dict[str, int]
-    _id_to_name: dict[int, str]
+    _name_to_id:  dict[str, int]
+    _id_to_name:  dict[int, str]
 
     @classmethod
     def load(cls, path: pathlib.Path) -> "Registry":
         if not path.exists():
             raise FileNotFoundError(f"registry not found: {path}")
         doc = json.loads(path.read_text())
+
         blocks: dict[str, int] = dict(doc.get("blocks", {}))
-        items: dict[str, int] = dict(doc.get("items", {}))
+        items:  dict[str, int] = dict(doc.get("items", {}))
         merged: dict[str, int] = {}
         merged.update(blocks)
         merged.update(items)
+
         id_to_name = {v: k for k, v in merged.items()}
         return cls(blocks, items, merged, id_to_name)
 

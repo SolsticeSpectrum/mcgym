@@ -1,4 +1,4 @@
-"""Gather wood task, dense shaping toward finding and mining logs."""
+"""Gather wood task, dense shaping toward finding and mining logs"""
 from __future__ import annotations
 
 import numpy as np
@@ -34,7 +34,7 @@ W_JERK     = 0.002
 W_JUMP     = 0.001
 
 # signed degrees per camera bin so jerk catches direction reversals
-CAM = np.array([-10.0, -3.0, 0.0, 3.0, 10.0], dtype=np.float32)
+CAM = np.array([-10.0,  -3.0,   0.0,   3.0,  10.0], dtype=np.float32)
 
 
 def _wood_name(name: str) -> bool:
@@ -56,7 +56,7 @@ def log_block_ids(registry: Registry) -> set[int]:
 
 
 class Wood(Task):
-    """Vectorized over all N agents, prev trackers are (N,) arrays."""
+    """Vectorized over all N agents, prev trackers are (N,) arrays"""
 
     name  = "wood"
     eplen = 256
@@ -75,13 +75,14 @@ class Wood(Task):
         self._log_item[items[items < self._lut]] = True
 
         # distance from grid center per cell, far shell is stride blocks apart
-        r = (EDGE - 1) // 2
+        r    = (EDGE - 1) // 2
         cell = np.empty(EDGE * EDGE * EDGE, dtype=np.float32)
         for dy in range(-r, r + 1):
             for dz in range(-r, r + 1):
                 for dx in range(-r, r + 1):
                     cell[((dy + r) * EDGE + (dz + r)) * EDGE + (dx + r)] = (dx * dx + dy * dy + dz * dz) ** 0.5
-        self._cell = cell
+
+        self._cell     = cell
         self._cell_far = cell * float(spec.VOXEL_FAR_STRIDE)
 
         self._wood  = None
@@ -108,17 +109,17 @@ class Wood(Task):
         return np.where(mask, self._cell_far[None, :], NO_LOG_FAR).min(axis=1).astype(np.float32)
 
     def reset(self, obs: np.ndarray) -> None:
-        self._wood = self._count(obs)
-        self._dist = self._near(obs)
-        self._far = self._shell(obs)
-        self._total = self._items(obs)
-        self._yaw[:] = 0.0
+        self._wood     = self._count(obs)
+        self._dist     = self._near(obs)
+        self._far      = self._shell(obs)
+        self._total    = self._items(obs)
+        self._yaw[:]   = 0.0
         self._pitch[:] = 0.0
 
     def reward(self, obs, act, died, respawned) -> np.ndarray:
-        wood = self._count(obs)
-        dist = self._near(obs)
-        far = self._shell(obs)
+        wood  = self._count(obs)
+        dist  = self._near(obs)
+        far   = self._shell(obs)
         total = self._items(obs)
 
         r = (
@@ -128,15 +129,15 @@ class Wood(Task):
             + W_ANYITEM * np.maximum(total - self._total, 0.0)
         )
 
-        looking = (obs["target_in_range"] == 1) & np.isin(obs["target_block"], self._blocks)
+        looking  = (obs["target_in_range"] == 1) & np.isin(obs["target_block"], self._blocks)
         attacked = act[:, 6] == 1
         r = r + W_FACE * looking + W_ATTACK * (looking & attacked)
 
         # camera shaping
-        yaw = CAM[act[:, 4]]
+        yaw   = CAM[act[:, 4]]
         pitch = CAM[act[:, 5]]
-        jerk = np.abs(yaw - self._yaw) + np.abs(pitch - self._pitch)
-        vel = np.abs(yaw) + np.abs(pitch)
+        jerk  = np.abs(yaw - self._yaw) + np.abs(pitch - self._pitch)
+        vel   = np.abs(yaw) + np.abs(pitch)
         r = r - W_CAMERA * vel - W_JERK * jerk - W_JUMP * act[:, 2]
 
         # zero the respawn frame, its cross episode delta is spurious, then
@@ -145,14 +146,15 @@ class Wood(Task):
         r[respawned] = 0.0
         r[died] = -W_DEATH
 
-        self._wood = wood
-        self._dist = dist
-        self._far = far
-        self._total = total
-        self._yaw = yaw.astype(np.float32)
-        self._pitch = pitch.astype(np.float32)
-        self._yaw[died] = 0.0
+        self._wood        = wood
+        self._dist        = dist
+        self._far         = far
+        self._total       = total
+        self._yaw         = yaw.astype(np.float32)
+        self._pitch       = pitch.astype(np.float32)
+        self._yaw[died]   = 0.0
         self._pitch[died] = 0.0
+
         return r
 
     def metric(self, obs: np.ndarray) -> np.ndarray:
