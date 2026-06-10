@@ -247,7 +247,12 @@ def train(args: argparse.Namespace) -> None:
         # background update's kernels (default stream). Different modules + disjoint data, so the
         # GPU can run both streams concurrently; the .cpu() inside the stream context blocks the
         # host until the forward lands, which also enforces correct ordering (no cross-stream race).
-        collect_stream = torch.cuda.Stream() if str(device).startswith("cuda") else None
+        # High-priority stream: the collect forwards are small latency-critical kernels that
+        # otherwise queue behind the background update's big throughput kernels (measured 4s
+        # uncontended vs 17s contended per rollout).
+        collect_stream = (
+            torch.cuda.Stream(priority=-1) if str(device).startswith("cuda") else None
+        )
 
         # Compile the collect forward too (static 576-agent batch): the eager small-batch
         # forward is launch-overhead-bound. Compiling the bound method keeps load_state_dict
