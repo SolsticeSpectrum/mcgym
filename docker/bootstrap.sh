@@ -1,6 +1,6 @@
 #!/bin/bash
 # MCAI box bootstrap — the one script behind both supervisord programs (see
-# docker-compose.yml, which writes the program configs via the mcai-init service):
+# docker-compose.yml, which writes the program configs via the mcgym-init service):
 #
 #   bootstrap.sh ssh     dropbear SSH on :2222, keys from docker/.env
 #   bootstrap.sh train   toolchain + repo clone + gym build + supervised wood task
@@ -16,7 +16,7 @@ set -euo pipefail
 MODE="${1:?usage: bootstrap.sh ssh|train}"
 
 DRIVE=/drive2
-INIT_DIR=/opt/mcai-init        # written by the compose mcai-init service on every `up`
+INIT_DIR=/opt/mcgym-init        # written by the compose mcgym-init service on every `up`
 SSH_DIR=$DRIVE/xgl-ssh         # persisted dropbear state (host key + deb cache)
 TOOLS=$DRIVE/tools             # rustup/cargo/venv/pip-cache — survive recreates
 SRC=$DRIVE/mcai                # git clone of the repo (disposable; no state inside)

@@ -1,8 +1,8 @@
-package com.mcai.agent;
+package com.mcgym.agent;
 
-import com.mcai.policy.Actions;
-import com.mcai.policy.Policy;
-import com.mcai.schema.Registry;
+import com.mcgym.policy.Actions;
+import com.mcgym.policy.Policy;
+import com.mcgym.schema.Registry;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class Runner {
 
-    private static final Logger LOG = LoggerFactory.getLogger("mcai");
+    private static final Logger LOG = LoggerFactory.getLogger("mcgym");
     private static final int LOG_EVERY = 10;
 
     private final Policy policy;
@@ -105,7 +105,7 @@ public final class Runner {
             if (registry.isLogItem(obs.invId[i])) wood += (int) obs.invCount[i];
 
         // target distance and in range live in the scalars
-        LOG.info("[mcai] tick={} x={} z={} yaw={} pitch={} hp={} logs={} aimed={} target={} dist={} wood={} | fwd={} strafe={} jump={} sprint={} yawD={} pitchD={} attack={}",
+        LOG.info("[mcgym] tick={} x={} z={} yaw={} pitch={} hp={} logs={} aimed={} target={} dist={} wood={} | fwd={} strafe={} jump={} sprint={} yawD={} pitchD={} attack={}",
             ticks,
             String.format("%.1f", player.getX()),
             String.format("%.1f", player.getZ()),

@@ -1,4 +1,4 @@
-package com.mcai.schema;
+package com.mcgym.schema;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;

@@ -1,7 +1,7 @@
-# mcai
+# MCGym
 
-RL agents that play real Minecraft. A from scratch PPO stack with a fast headless
-gym built on Pumpkin, vanilla worldgen and physics, no shortcuts. Trained policies
+RLGym but for Minecraft. A from scratch PPO stack with a fast headless gym
+built on Pumpkin, vanilla worldgen and physics, no shortcuts. Trained policies
 run in an unmodified Minecraft client through a Fabric mod, the agent sees only
 structured observations, no pixels.
 

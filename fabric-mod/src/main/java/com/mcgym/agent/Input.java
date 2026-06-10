@@ -1,6 +1,6 @@
-package com.mcai.agent;
+package com.mcgym.agent;
 
-import com.mcai.policy.Actions;
+import com.mcgym.policy.Actions;
 
 import net.minecraft.util.PlayerInput;
 import net.minecraft.util.math.Vec2f;
