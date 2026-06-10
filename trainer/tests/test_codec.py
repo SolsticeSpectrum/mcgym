@@ -1,6 +1,6 @@
 import numpy as np
 
-from mcai_train.schema import codec, spec
+from mcgym.schema import codec, spec
 
 
 def _sample_obs():

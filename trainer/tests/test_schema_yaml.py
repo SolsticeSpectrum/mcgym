@@ -19,7 +19,7 @@ def test_voxel_field_matches_radius():
     doc = yaml.safe_load(SCHEMA_PATH.read_text())
     radius = doc["params"]["voxel_radius"]
     edge = 2 * radius + 1
-    # Both the near and far voxel shells are edge**3 grids of block ids.
+    # near and far shells are both edge**3 grids of block ids
     for name in ("voxel_blocks", "voxel_far"):
         voxel = next(f for f in doc["observation"] if f["name"] == name)
         assert voxel["shape"] == [edge**3]

@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from mcai_train.schema import registry
+from mcgym.schema import registry
 
 SAMPLE = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.sample.json"
 

@@ -1,72 +1,53 @@
-# MCAI GPU box — one-command training deployment
+# docker
 
-Everything needed to turn a fresh GPU host into a running MCAI training box:
-a Selkies web desktop, key-only SSH, and the wood task training automatically
-with the live monitor — from three files and one `docker compose up -d`.
+One compose file, fresh gpu host to running training. Copy this folder to the
+host, fill `.env` from `.env.example`, `docker compose up -d`.
 
-## Quickstart (host admin)
+What happens on every up
 
-```bash
-# on the host, in any folder:
-#   docker-compose.yml  bootstrap.sh  .env   (copy .env.example -> .env, fill it in)
-docker compose up -d
-```
+1. `mcai-init` (busybox, exits right away) writes the ssh authorized_keys and
+   two supervisord program configs into the data dir
+2. `xgl` (the selkies desktop image) starts, supervisord picks up the programs,
+   both backed by the single `bootstrap.sh`
+   - ssh, dropbear on 2222, key only, host key persists so clients never see
+     a host key warning
+   - train, installs rustup and a python venv with cuda torch into
+     `/drive2/tools` (first boot only), clones the repo, builds the gym and
+     starts training in an auto resume loop
 
-That's it. On every `up`:
+First boot takes 10 to 20 min for toolchains and the gym build, later boots go
+straight to training and resume the latest checkpoint.
 
-1. **mcai-init** (busybox, exits immediately) writes the SSH `authorized_keys`
-   (from `.env`) and two supervisord program configs into `${DATA_DIR}/mcai-init`.
-2. **xgl** (the Selkies desktop image) starts; its supervisord picks up the two
-   programs, both backed by the single `bootstrap.sh`:
-   - **ssh** — dropbear on port `2222` (key-only; the host key persists across
-     recreates so clients never see a host-key warning)
-   - **train** — installs rustup + a Python venv with CUDA torch into
-     `/drive2/tools` (first boot only; cached afterwards), `git clone`s the repo
-     (`REPO_URL`), `cargo build`s the Rust gym, and launches the wood task in an
-     auto-resume/auto-restart loop
-
-After the first boot (toolchain download + gym build, ~10–20 min) the box is
-live. Later boots skip straight to training in under a minute, resuming from
-the latest checkpoint.
-
-| What | Where |
+| what | where |
 |---|---|
-| Web desktop | `http://<host>:8080` (user `ubuntu`, password from `.env`) |
-| Training monitor | `http://<host>:9080` |
-| SSH | `ssh -p 2222 ubuntu@<host>` (keys from `.env`) |
-| Training log | `/drive2/train.log` (also `docker exec xgl tail -f /drive2/train.log`) |
-| SSH program log | `/tmp/mcai-ssh.log` inside the container |
+| web desktop | `http://host:8080`, user ubuntu, password from `.env` |
+| training monitor | `http://host:9080` |
+| ssh | `ssh -p 2222 ubuntu@host` |
+| training log | `/drive2/train.log` |
 
-## Persistent layout (`${DATA_DIR}` = `/drive2` in-container)
+## persistent layout
 
-The container is disposable; only `/drive2` survives recreates:
+The container is disposable, only `/drive2` (the `DATA_DIR` mount) survives
 
 ```
-/drive2/
-  tools/      rustup + cargo + python venv (torch) + pip cache
-  mcai/       git clone of the repo (re-cloned/reset on boot — keep no state here)
-  runs/       checkpoints per run name (this is the valuable part)
-  xgl-ssh/    dropbear host key + cached debs
-  mcai-init/  files written by the init service on each `up`
-  train.log   training output
+tools/      rustup + cargo + venv + pip cache
+mcai/       repo clone, re cloned on boot, keep no state here
+runs/       checkpoints per task, the valuable part
+xgl-ssh/    dropbear host key + cached debs
+mcai-init/  files written by the init service
+train.log   training output
 ```
 
-## Notes & quirks
+## quirks
 
-- **Private repo**: embed a GitHub fine-grained PAT (read-only Contents) in
-  `REPO_URL` — see `.env.example`.
-- **`network_mode: host`**: the compose `ports:` section is decorative; selkies
-  (8080), the monitor (9080) and dropbear (2222) bind directly on the host.
-  Port 22 on the host IP is the host's own sshd, not the container.
-- **The image has no real root**: `/usr/bin/sudo` is a fakeroot symlink. The
-  bootstrap uses `fakeroot apt-get` for packages; the real setuid sudo is
-  `sudo-root` (container `PASSWD`). OpenSSH sshd cannot run here (privsep
-  chroot gets EPERM) — that's why dropbear.
-- **Resources directly buy throughput**: at the default 2048 agents the
-  trainer's two rollout buffers need ~21 GB and the 32 gym processes want a
-  core each. If the host has headroom, raise `MEM_LIMIT`/`CPUS` in `.env` (and
-  `NUM_ENVS` to match the cores). The tuned defaults hit ~14.7k steps/s on an
-  RTX 6000 with `CPUS=12`/`MEM_LIMIT=64g`.
-- **Changing training knobs**: edit `.env`, then `docker compose up -d`
-  (recreates the init files) and restart training:
-  `docker exec xgl supervisorctl restart mcai-train`.
+- private repo, embed a github pat in `REPO_URL`, see `.env.example`
+- host networking, the compose ports section is decorative, port 22 on the
+  host ip is the hosts own sshd not the container
+- the image has no real root, sudo is fakeroot, the bootstrap uses
+  `fakeroot apt-get`, real sudo is `sudo-root` with the container password,
+  openssh sshd cannot run there which is why dropbear
+- resources buy throughput directly, the rollout buffers need ~21 GB at 2048
+  agents and the 32 gyms want a core each, raise `MEM_LIMIT` and `CPUS` if the
+  host has headroom
+- knob changes, edit `.env`, `docker compose up -d`, then
+  `docker exec xgl supervisorctl restart mcai-train`
