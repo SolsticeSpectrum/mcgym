@@ -5,9 +5,9 @@ import sys
 
 import torch
 
-from mcai_train.checkpoint import _checkpoint_dirs, export_onnx, load_latest
-from mcai_train.models.policy import EMBED_DIM, ActorCritic
-from mcai_train.train import _model_sizes, REGISTRY_PATH
+from mcgym.checkpoint import _checkpoint_dirs, export_onnx, load_latest
+from mcgym.models.policy import EMBED_DIM, ActorCritic
+from mcgym.train import _model_sizes, REGISTRY_PATH
 
 run_dir = sys.argv[1]
 out = pathlib.Path(sys.argv[2])
@@ -24,7 +24,7 @@ meta = load_latest(run_dir, model, None)
 if meta is None:
     raise SystemExit(f"no checkpoint in {run_dir}")
 model.eval()
-print(f"loaded {run_dir} @ {meta.get('cumulative_timesteps')} steps")
+print(f"loaded {run_dir} @ {meta.get('steps')} steps")
 
 tmp = pathlib.Path(run_dir) / "_export"
 path = export_onnx(tmp, model)

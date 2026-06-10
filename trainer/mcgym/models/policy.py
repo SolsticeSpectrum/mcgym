@@ -19,9 +19,9 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 
-from mcai_train.schema import spec
+from mcgym.schema import spec
 
-from .action_space import BINS
+from .actions import BINS
 
 VOXEL_EDGE = spec.VOXEL_EDGE
 VOXEL_COUNT = VOXEL_EDGE ** 3
@@ -34,13 +34,13 @@ SCALAR_DIM = 3 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 6
 LATENT_DIM = 256
 
 
-def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
+def tensors(obs: np.ndarray, device) -> dict:
     """Extract the tensors the encoder needs from an (N,) OBS_DTYPE batch.
 
     Returns voxel ids and inventory ids as long tensors (for the embeddings),
     everything else as float tensors, all on ``device``.
     """
-    obs = obs_struct_batch
+    obs = obs
 
     # Keep the voxel/id grids as int32 for the CPU->GPU transfer (they are i32 in the schema);
     # upcast to long on the GPU inside the encoder. Transferring int32 instead of int64 halves
@@ -99,7 +99,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     }
 
 
-class ObsEncoder(nn.Module):
+class Encoder(nn.Module):
     def __init__(self, num_blocks: int, num_items: int, scale: int = 1) -> None:
         super().__init__()
         # `scale` multiplies every width. scale=1 is the original 646k-param model (tuned for a
@@ -172,7 +172,7 @@ class ObsEncoder(nn.Module):
 class ActorCritic(nn.Module):
     def __init__(self, num_blocks: int, num_items: int, scale: int = 1) -> None:
         super().__init__()
-        self.encoder = ObsEncoder(num_blocks, num_items, scale=scale)
+        self.encoder = Encoder(num_blocks, num_items, scale=scale)
         latent = self.encoder.latent_dim
         self.policy_head = nn.Linear(latent, sum(BINS))
         self.value_head = nn.Linear(latent, 1)
@@ -192,14 +192,14 @@ class ActorCritic(nn.Module):
             actions = [d.probs.argmax(dim=-1) for d in dists]
         else:
             actions = [d.sample() for d in dists]
-        action_idx = torch.stack(actions, dim=1)  # (B, 7)
+        act = torch.stack(actions, dim=1)  # (B, 7)
         logprob = sum(d.log_prob(a) for d, a in zip(dists, actions))
-        return action_idx, logprob, value
+        return act, logprob, value
 
-    def evaluate(self, obs_tensors: dict, action_idx: torch.Tensor):
+    def evaluate(self, obs_tensors: dict, act: torch.Tensor):
         logits, value = self.forward(obs_tensors)
         dists = self._dists(logits)
-        cols = action_idx.unbind(dim=1)
+        cols = act.unbind(dim=1)
         logprob = sum(d.log_prob(a) for d, a in zip(dists, cols))
         entropy = sum(d.entropy() for d in dists)
         return logprob, entropy, value

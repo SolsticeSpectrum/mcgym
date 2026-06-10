@@ -86,7 +86,7 @@ train_mode() {
     # The wood task, forever: train_box.sh carries the tuned defaults; the compose
     # passes knob overrides via the supervisord program environment. RESUME=1 is
     # safe with no checkpoint (fresh start). Crashes restart after a pause.
-    export MCAI_BF16=1 MCAI_COMPILE=1 MCAI_PROFILE=1
+    export MCGYM_BF16=1 MCGYM_COMPILE=1 MCGYM_PROFILE=1
     while true; do
         pkill -9 -f "mcgym --shm" 2>/dev/null || true
         RESUME=1 CKPT_DIR="$RUNS/${RUN:-woodopt}" bash "$SRC/trainer/scripts/train_box.sh" \

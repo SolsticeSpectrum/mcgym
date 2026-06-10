@@ -1,6 +1,6 @@
 import numpy as np
 
-from mcai_train.schema import spec
+from mcgym.schema import spec
 
 
 def test_obs_dtype_is_packed_little_endian():

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from mcai_train.schema import spec
+from mcgym.schema import spec
 
 # Categorical sizes per head (sum = 22 = policy logit width).
 BINS = [3, 3, 2, 2, 5, 5, 2]

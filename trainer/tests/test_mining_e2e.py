@@ -15,12 +15,12 @@ import uuid
 import numpy as np
 import pytest
 
-from mcai_train.env import ShmTransport, launch_gym
-from mcai_train.schema import codec, spec
-from mcai_train.schema.registry import Registry
-from mcai_train.tasks import log_item_ids
+from mcgym.env import Transport, launch
+from mcgym.schema import codec, spec
+from mcgym.schema.registry import Registry
+from mcgym.tasks.wood import log_item_ids
 
-REGISTRY_PATH = pathlib.Path("/home/user/github/mcai/schema/registry.json")
+REGISTRY = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.json"
 VOXEL_RADIUS = spec.PARAMS["voxel_radius"]
 VOXEL_EDGE = spec.VOXEL_EDGE
 
@@ -103,25 +103,25 @@ def _run_episode(transport, build_action, steps):
 
 @pytest.mark.slow
 def test_mining_e2e():
-    n_agents = 1
+    agents = 1
     seed = 0
-    registry = Registry.load(REGISTRY_PATH)
+    registry = Registry.load(REGISTRY)
     log_ids = log_item_ids(registry)
 
     tmpdir = tempfile.mkdtemp(prefix="mcai_sock_")
     shm_path = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
     sock_path = str(pathlib.Path(tmpdir) / "gym.sock")
 
-    proc = launch_gym(n_agents, seed, shm_path, sock_path)
+    proc = launch(agents, seed, shm_path, sock_path)
     transport = None
     try:
-        transport = ShmTransport(shm_path, sock_path, n_agents)
+        transport = Transport(shm_path, sock_path, agents)
         obs0 = transport.reset()
-        assert obs0.shape == (n_agents,)
+        assert obs0.shape == (agents,)
 
         import json
 
-        reg_doc = json.loads(REGISTRY_PATH.read_text())
+        reg_doc = json.loads(REGISTRY.read_text())
         # oak_log BLOCK id (voxel_blocks uses block ids); the item that drops is the
         # oak_log ITEM id (inv_item_id uses item ids). Same name, two id tables.
         oak_log_block = reg_doc["blocks"]["minecraft:oak_log"]

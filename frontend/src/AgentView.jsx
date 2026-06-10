@@ -101,7 +101,7 @@ export default function AgentView({ env, i, palette }) {
       <div ref={wrap} style={{ position: 'absolute', inset: 0 }} />
       <div style={{ position: 'absolute', top: 10, left: 10, padding: '6px 10px', background: '#0d1018cc', borderRadius: 6 }}>
         env {env} · agent {i}
-        {info && <span style={{ color: '#9aa4bf' }}> — wood {info.wood} · yaw {info.yaw} · pitch {info.pitch}{info.attacking ? ' · breaking' : info.look ? ' · aimed' : ''}</span>}
+        {info && <span style={{ color: '#9aa4bf' }}> — score {info.score} · yaw {info.yaw} · pitch {info.pitch}{info.attacking ? ' · breaking' : info.look ? ' · aimed' : ''}</span>}
         <label style={{ marginLeft: 14, color: '#9aa4bf' }}>
           <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> transparent
         </label>

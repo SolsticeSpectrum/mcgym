@@ -29,7 +29,7 @@ export default function EnvDetail({ env, nPer, palette, onPick }) {
           const raw = datas[i]
           if (!raw) continue
           const d = smoothAgent(`${env}:${i}`, raw)
-          nextMeta[i] = { wood: d.wood, look: d.look, attacking: d.attacking, head: d.head }
+          nextMeta[i] = { score: d.score, look: d.look, attacking: d.attacking, head: d.head }
           const c = cards.current[i]
           if (c && c.pov) drawAgentMini(d, palette, c.pov, c.top)
         }
@@ -58,7 +58,7 @@ export default function EnvDetail({ env, nPer, palette, onPick }) {
             <div style={{ padding: '4px 8px', display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
               <span>#{i}</span>
               <span style={{ color: m.attacking ? '#f38ba8' : m.look ? '#f9e2af' : '#9aa4bf' }}>
-                {m.attacking ? 'breaking' : m.look ? 'aimed' : `wood ${m.wood ?? 0}`}
+                {m.attacking ? 'breaking' : m.look ? 'aimed' : `score ${m.score ?? 0}`}
               </span>
             </div>
           </div>

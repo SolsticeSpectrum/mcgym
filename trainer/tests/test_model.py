@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 import torch
 
-from mcai_train.models.action_space import BINS, actions_to_records
-from mcai_train.models.policy import ActorCritic, obs_to_tensors
-from mcai_train.schema import spec
+from mcgym.models.actions import BINS, actions_to_records
+from mcgym.models.policy import ActorCritic, tensors
+from mcgym.schema import spec
 
 REGISTRY_PATH = pathlib.Path("/home/user/github/mcai/schema/registry.json")
 
@@ -57,23 +57,23 @@ def test_forward_shapes():
     num_blocks, num_items = _sizes()
     model = ActorCritic(num_blocks, num_items)
     obs = _fake_obs(4)
-    tensors = obs_to_tensors(obs, "cpu")
+    t = tensors(obs, "cpu")
 
-    latent = model.encoder.encode(tensors)
+    latent = model.encoder.encode(t)
     assert latent.shape == (4, 256)
 
-    logits, value = model.forward(tensors)
+    logits, value = model.forward(t)
     assert logits.shape == (4, sum(BINS))
     assert value.shape == (4,)
 
-    action_idx, logprob, val = model.get_action(tensors)
-    assert action_idx.shape == (4, 7)
+    act, logprob, val = model.get_action(t)
+    assert act.shape == (4, 7)
     assert logprob.shape == (4,)
     assert val.shape == (4,)
     for h, b in enumerate(BINS):
-        assert (action_idx[:, h] >= 0).all() and (action_idx[:, h] < b).all()
+        assert (act[:, h] >= 0).all() and (act[:, h] < b).all()
 
-    lp, ent, v = model.evaluate(tensors, action_idx)
+    lp, ent, v = model.evaluate(t, act)
     assert lp.shape == (4,) and ent.shape == (4,) and v.shape == (4,)
     assert torch.isfinite(lp).all() and torch.isfinite(ent).all() and torch.isfinite(v).all()
 
@@ -81,9 +81,9 @@ def test_forward_shapes():
 def test_deterministic_action():
     num_blocks, num_items = _sizes()
     model = ActorCritic(num_blocks, num_items)
-    tensors = obs_to_tensors(_fake_obs(4), "cpu")
-    a1, _, _ = model.get_action(tensors, deterministic=True)
-    a2, _, _ = model.get_action(tensors, deterministic=True)
+    t = tensors(_fake_obs(4), "cpu")
+    a1, _, _ = model.get_action(t, deterministic=True)
+    a2, _, _ = model.get_action(t, deterministic=True)
     assert torch.equal(a1, a2)
 
 
@@ -91,8 +91,8 @@ def test_deterministic_action():
 def test_cuda_forward():
     num_blocks, num_items = _sizes()
     model = ActorCritic(num_blocks, num_items).to("cuda")
-    tensors = obs_to_tensors(_fake_obs(4), "cuda")
-    action_idx, logprob, value = model.get_action(tensors)
-    assert action_idx.shape == (4, 7)
-    assert action_idx.device.type == "cuda"
+    t = tensors(_fake_obs(4), "cuda")
+    act, logprob, value = model.get_action(t)
+    assert act.shape == (4, 7)
+    assert act.device.type == "cuda"
     assert torch.isfinite(logprob).all() and torch.isfinite(value).all()

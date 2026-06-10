@@ -1,7 +1,7 @@
 import json
 import pathlib
 
-from mcai_train.schema import codec, golden, spec
+from mcgym.schema import codec, golden, spec
 
 FIX = pathlib.Path(__file__).resolve().parents[2] / "schema" / "fixtures"
 

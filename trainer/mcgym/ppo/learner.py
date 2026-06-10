@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 
 
-class PPOLearner:
+class Learner:
     def __init__(
         self,
         model: nn.Module,
@@ -61,16 +61,16 @@ class PPOLearner:
         for _ in range(self.epochs):
             for (
                 obs_tensors,
-                action_idx,
+                act,
                 old_logprob,
                 advantages,
                 returns,
                 old_value,
-            ) in buffer.iter_minibatches(self.minibatch, self.device, data=data):
+            ) in buffer.batches(self.minibatch, self.device, data=data):
                 adv = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
-                    logprob, entropy, value = self._evaluate(obs_tensors, action_idx)
+                    logprob, entropy, value = self._evaluate(obs_tensors, act)
                 logprob, entropy, value = logprob.float(), entropy.float(), value.float()
 
                 ratio = torch.exp(logprob - old_logprob)
