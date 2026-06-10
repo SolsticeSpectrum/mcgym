@@ -67,34 +67,43 @@ class RolloutBuffer:
         self.returns = returns.reshape(-1)
         return self.advantages, self.returns
 
-    def iter_minibatches(self, batch_size: int, device):
-        """Yield shuffled minibatches of (obs_tensors, action_idx, old_logprob,
-        advantages, returns, old_value).
+    def to_device(self, device) -> dict:
+        """Encode the whole rollout to device tensors ONCE for an update.
 
-        Encodes the whole rollout's obs to GPU ONCE per call and indexes minibatches on-device,
-        instead of re-encoding + re-transferring the obs for every minibatch (which moved the full
-        obs H2D batch_count times). The big tensors stay resident on the GPU for the call; the
-        minibatch gather is a cheap on-device index.
+        The CPU-side strided gather out of the structured obs array + the H2D upload is the
+        expensive part (~GBs); epochs only need a fresh shuffle, so the learner encodes once
+        and passes the result to iter_minibatches for every epoch.
         """
         from mcai_train.models.policy import obs_to_tensors
 
-        total = self.T * self.N
+        return {
+            "obs": obs_to_tensors(self.obs.reshape(-1), device),  # dict of (total, ...) tensors
+            "actions": torch.from_numpy(self.action_idx.reshape(-1, self.n_heads)).to(device),
+            "logprob": torch.from_numpy(self.logprob.reshape(-1)).to(device),
+            "adv": torch.from_numpy(self.advantages).to(device),
+            "ret": torch.from_numpy(self.returns).to(device),
+            "value": torch.from_numpy(self.value.reshape(-1)).to(device),
+            "total": self.T * self.N,
+        }
 
-        all_obs = obs_to_tensors(self.obs.reshape(-1), device)  # dict of (total, ...) GPU tensors
-        all_actions = torch.from_numpy(self.action_idx.reshape(-1, self.n_heads)).to(device)
-        all_logprob = torch.from_numpy(self.logprob.reshape(-1)).to(device)
-        all_adv = torch.from_numpy(self.advantages).to(device)
-        all_ret = torch.from_numpy(self.returns).to(device)
-        all_value = torch.from_numpy(self.value.reshape(-1)).to(device)
+    def iter_minibatches(self, batch_size: int, device, data: dict | None = None):
+        """Yield shuffled minibatches of (obs_tensors, action_idx, old_logprob,
+        advantages, returns, old_value).
 
-        order = torch.randperm(total, device=device)
-        for start in range(0, total, batch_size):
+        Pass ``data`` (from to_device) to reuse one encode across all epochs; otherwise this
+        encodes the rollout itself. Minibatch gathers are cheap on-device indexing either way.
+        """
+        if data is None:
+            data = self.to_device(device)
+
+        order = torch.randperm(data["total"], device=device)
+        for start in range(0, data["total"], batch_size):
             mb = order[start : start + batch_size]
             yield (
-                {k: v[mb] for k, v in all_obs.items()},
-                all_actions[mb],
-                all_logprob[mb],
-                all_adv[mb],
-                all_ret[mb],
-                all_value[mb],
+                {k: v[mb] for k, v in data["obs"].items()},
+                data["actions"][mb],
+                data["logprob"][mb],
+                data["adv"][mb],
+                data["ret"][mb],
+                data["value"][mb],
             )
