@@ -142,11 +142,9 @@ class WoodEnv:
         return obs_struct, reward, done
 
     def wood_held(self, obs_struct: np.ndarray) -> np.ndarray:
-        """Per-agent total wood currently held (for logging)."""
-        return np.array(
-            [wood_count(obs_struct[i], self._log_ids) for i in range(self.n_agents)],
-            dtype=np.int64,
-        )
+        """Per-agent total wood currently held (for logging). Vectorised over the batch."""
+        mask = np.isin(obs_struct["inv_item_id"], self._log_id_arr)
+        return (mask * obs_struct["inv_count"]).sum(axis=1).astype(np.int64)
 
     def close(self) -> None:
         try:
