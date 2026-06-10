@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { drawAgentMini } from './miniRender.js'
+import { smoothAgent } from './sticky.js'
 import { WATER, LAVA } from './voxelScene.js'
 
 const mediumTint = (head) =>
@@ -25,8 +26,9 @@ export default function EnvDetail({ env, nPer, palette, onPick }) {
         if (!alive) return
         const nextMeta = {}
         for (let i = 0; i < nPer; i++) {
-          const d = datas[i]
-          if (!d) continue
+          const raw = datas[i]
+          if (!raw) continue
+          const d = smoothAgent(`${env}:${i}`, raw)
           nextMeta[i] = { wood: d.wood, look: d.look, attacking: d.attacking, head: d.head }
           const c = cards.current[i]
           if (c && c.pov) drawAgentMini(d, palette, c.pov, c.top)
