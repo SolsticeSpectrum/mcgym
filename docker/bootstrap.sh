@@ -89,7 +89,7 @@ train_mode() {
     export MCGYM_BF16=1 MCGYM_COMPILE=1 MCGYM_PROFILE=1
     while true; do
         pkill -9 -f "mcgym --shm" 2>/dev/null || true
-        RESUME=1 CKPT_DIR="$RUNS/${RUN:-woodopt}" bash "$SRC/trainer/scripts/train_box.sh" \
+        RESUME=1 RUN="${TASK:-wood}" CKPT_DIR="$RUNS/${TASK:-wood}" bash "$SRC/trainer/scripts/train_box.sh" \
             || echo "[bootstrap] train exited ($?)"
         echo "[bootstrap] restarting training in 15s"
         sleep 15

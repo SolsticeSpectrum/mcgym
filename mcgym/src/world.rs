@@ -1,11 +1,5 @@
-//! Headless vanilla world generation via Pumpkin's `pumpkin-world`.
-//!
-//! No disk, no networking, no async chunk-system: chunks are generated directly into an
-//! in-memory cache. Two paths:
-//!   * `ensure_terrain_chunk` — biomes->noise->surface only (fast, no trees); for read/throughput.
-//!   * `ensure_chunk` — full vanilla generation through the Features stage, so chunks contain
-//!     trees/logs (the wood task). Uses Pumpkin's `generate_single_chunk` with a noop block
-//!     registry (mobs off, matching the gym requirement).
+//! headless vanilla worldgen via pumpkin, chunks generated straight into an in memory cache
+//! ensure_terrain_chunk is surface only (fast), ensure_chunk runs features so trees exist
 
 use std::collections::HashMap;
 
@@ -22,50 +16,48 @@ use pumpkin_world::generation::generator::{GeneratorInit, VanillaGenerator};
 use pumpkin_world::generation::proto_chunk::GenerationCache;
 use pumpkin_world::world::{BlockAccessor, WorldPortalExt};
 
-/// Block-behaviour hooks needed during generation. The gym wants vanilla terrain + features but
-/// no mob spawning, so placement is always allowed and mob spawning is a noop.
-struct GymBlockRegistry;
+// generation hooks: allow all placement, no mob spawning
+struct Hooks;
 
-impl WorldPortalExt for GymBlockRegistry {
+impl WorldPortalExt for Hooks {
     fn can_place_at(
         &self,
-        _block: &Block,
-        _state: &BlockState,
+        _block:    &Block,
+        _state:    &BlockState,
         _accessor: &dyn BlockAccessor,
-        _pos: &BlockPos,
+        _pos:      &BlockPos,
     ) -> bool {
         true
     }
 
     fn spawn_mobs_for_chunk_generation(
         &self,
-        _cache: &mut dyn GenerationCache,
-        _biome: &'static Biome,
+        _cache:   &mut dyn GenerationCache,
+        _biome:   &'static Biome,
         _chunk_x: i32,
         _chunk_z: i32,
     ) {
     }
 }
 
-/// A generated world: the vanilla generator plus an in-memory chunk cache.
 pub struct World {
     generator: VanillaGenerator,
-    registry: GymBlockRegistry,
-    chunks: HashMap<(i32, i32), ProtoChunk>,
-    bottom_y: i32,
-    height: i32,
+    hooks:     Hooks,
+    chunks:    HashMap<(i32, i32), ProtoChunk>,
+    bottom_y:  i32,
+    height:    i32,
 }
 
 impl World {
     pub fn new(seed: i64) -> Self {
         let generator = VanillaGenerator::new(Seed(seed as u64), Dimension::OVERWORLD);
-        let probe = ProtoChunk::new(0, 0, &generator);
-        let bottom_y = i32::from(probe.bottom_y());
-        let height = i32::from(probe.height());
+        let probe     = ProtoChunk::new(0, 0, &generator);
+        let bottom_y  = i32::from(probe.bottom_y());
+        let height    = i32::from(probe.height());
         Self {
             generator,
-            registry: GymBlockRegistry,
-            chunks: HashMap::new(),
+            hooks:    Hooks,
+            chunks:   HashMap::new(),
             bottom_y,
             height,
         }
@@ -81,7 +73,7 @@ impl World {
         self.bottom_y + self.height
     }
 
-    /// Fast terrain-only generation (no trees). For read/throughput benchmarking.
+    /// terrain only, no trees, for read/throughput benchmarking
     pub fn ensure_terrain_chunk(&mut self, cx: i32, cz: i32) {
         if self.chunks.contains_key(&(cx, cz)) {
             return;
@@ -93,8 +85,7 @@ impl World {
         self.chunks.insert((cx, cz), c);
     }
 
-    /// Full vanilla generation through Features (trees/logs present). Generates the 3x3
-    /// neighbourhood internally; the result is cached so each chunk is produced once.
+    /// full vanilla generation through features (trees/logs present), cached
     pub fn ensure_chunk(&mut self, cx: i32, cz: i32) {
         if self.chunks.contains_key(&(cx, cz)) {
             return;
@@ -103,20 +94,19 @@ impl World {
             &self.generator.dimension,
             self.generator.biome_mixer_seed,
             &self.generator,
-            &self.registry,
+            &self.hooks,
             cx,
             cz,
             StagedChunkEnum::Features,
         );
         let proto = match chunk {
             Chunk::Proto(boxed) => *boxed,
-            Chunk::Level(_) => unreachable!("Features stage stays a proto-chunk"),
+            Chunk::Level(_)     => unreachable!("features stage stays a proto chunk"),
         };
         self.chunks.insert((cx, cz), proto);
     }
 
-    /// Raw block-state id at world coords, or `None` if the chunk isn't generated or y is out
-    /// of range. The obs hot path.
+    /// raw block state id at world coords, None if ungenerated or y out of range
     #[inline]
     pub fn block_state_raw(&self, x: i32, y: i32, z: i32) -> Option<u16> {
         let local_y = y - self.bottom_y;
@@ -127,8 +117,7 @@ impl World {
         Some(chunk.get_block_state_raw(x & 15, local_y, z & 15))
     }
 
-    /// Break the block at world coords (set it to air), returning the old state id. The agent
-    /// then receives the drop directly (item-entity-on-ground step is a later refinement).
+    /// set block to air, returns the old state id
     pub fn break_block(&mut self, x: i32, y: i32, z: i32) -> Option<u16> {
         let local_y = y - self.bottom_y;
         if local_y < 0 || local_y >= self.height {
@@ -140,43 +129,39 @@ impl World {
         Some(old)
     }
 
-    /// Fill a voxel grid centred at block (cx,cy,cz) with the given stride, mapped to MCAI
-    /// registry ints. Caches the chunk pointer across cells (the loop is dy>dz>dx, X fastest, so
-    /// consecutive cells usually share a chunk) — turning ~4913 HashMap lookups per call into a
-    /// handful. Byte-identical to per-cell `block_state_raw` + `reg.block`. Same index convention.
+    /// fill voxel grid centred at (cx,cy,cz) with stride, mapped to mcai ints
+    /// caches the chunk ptr across cells, loop is dy>dz>dx so neighbours share a chunk
     pub fn fill_voxels(&self, reg: &Registry, cx: i32, cy: i32, cz: i32, stride: i32, out: &mut [i32]) {
-        let r = VOXEL_RADIUS as i32;
+        let r    = VOXEL_RADIUS as i32;
         let edge = VOXEL_EDGE as i32;
-        let mut cur: Option<(i32, i32)> = None;
+        let mut cur:       Option<(i32, i32)>  = None;
         let mut cur_chunk: Option<&ProtoChunk> = None;
         for dy in -r..=r {
-            let wy = cy + dy * stride;
+            let wy      = cy + dy * stride;
             let local_y = wy - self.bottom_y;
-            let y_ok = local_y >= 0 && local_y < self.height;
+            let y_ok    = local_y >= 0 && local_y < self.height;
             for dz in -r..=r {
                 let wz = cz + dz * stride;
                 for dx in -r..=r {
-                    let wx = cx + dx * stride;
-                    let index = (((dy + r) * edge + (dz + r)) * edge + (dx + r)) as usize;
+                    let wx  = cx + dx * stride;
+                    let idx = (((dy + r) * edge + (dz + r)) * edge + (dx + r)) as usize;
                     if !y_ok {
-                        out[index] = 0;
+                        out[idx] = 0;
                         continue;
                     }
                     let ck = (wx >> 4, wz >> 4);
                     if cur != Some(ck) {
-                        cur = Some(ck);
+                        cur       = Some(ck);
                         cur_chunk = self.chunks.get(&ck);
                     }
-                    let sid = cur_chunk.map_or(0, |c| c.get_block_state_raw(wx & 15, local_y, wz & 15));
-                    out[index] = reg.block(sid);
+                    let sid  = cur_chunk.map_or(0, |c| c.get_block_state_raw(wx & 15, local_y, wz & 15));
+                    out[idx] = reg.block(sid);
                 }
             }
         }
     }
 
-    /// Drop generated chunks that are not within `radius` chunks of any center (agent). Bounds
-    /// memory on long roaming runs; an agent re-entering an evicted area regenerates it
-    /// deterministically. Cheap O(chunks * centers) sweep, called infrequently.
+    /// drop chunks not within radius of any center, bounds memory on long roaming runs
     pub fn retain_chunks_near(&mut self, centers: &[(i32, i32)], radius: i32) {
         self.chunks.retain(|&(cx, cz), _| {
             centers
