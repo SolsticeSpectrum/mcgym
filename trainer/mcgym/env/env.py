@@ -1,4 +1,4 @@
-"""Generic env over the gym, task plugs in via mcgym.tasks.Task."""
+"""Generic env over the gym, task plugs in via mcgym.tasks.Task"""
 from __future__ import annotations
 
 import pathlib
@@ -16,17 +16,17 @@ from .transport import Transport
 
 
 class Env:
-    """One gym process, N agents in one world stepped in lockstep."""
+    """One gym process, N agents in one world stepped in lockstep"""
 
     def __init__(self, agents: int, seed: int, task: Task, timeout: float = 180.0) -> None:
         self.agents = agents
-        self.task = task
+        self.task   = task
 
-        self._tmp = tempfile.mkdtemp(prefix="mcai_env_")
-        self._shm = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+        self._tmp  = tempfile.mkdtemp(prefix="mcai_env_")
+        self._shm  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
         self._sock = str(pathlib.Path(self._tmp) / "gym.sock")
 
-        self._proc = launch(agents, seed, self._shm, self._sock, timeout=timeout)
+        self._proc     = launch(agents, seed, self._shm, self._sock, timeout=timeout)
         self.transport = Transport(self._shm, self._sock, agents)
 
         self._step = 0
@@ -35,9 +35,11 @@ class Env:
 
     def reset(self) -> np.ndarray:
         obs = self.transport.reset()
-        self._step = 0
+
+        self._step         = 0
         self._respawned[:] = False
         self.task.reset(obs)
+
         return obs
 
     def step(self, act: np.ndarray):
@@ -52,17 +54,17 @@ class Env:
     def recv(self):
         obs = self.transport.recv()
 
-        died = obs["health"] <= 0.0
+        died   = obs["health"] <= 0.0
         reward = self.task.reward(obs, self._pending, died, self._respawned)
         self._respawned = died.copy()
 
         self._step += 1
         timeout = self._step >= self.task.eplen
-        done = self.task.done(died) | timeout
+        done    = self.task.done(died) | timeout
 
         if timeout:
             obs = self.transport.reset()
-            self._step = 0
+            self._step         = 0
             self._respawned[:] = False
             self.task.reset(obs)
 
@@ -80,17 +82,18 @@ class Env:
                 self._proc.wait(timeout=30)
             except Exception:
                 self._proc.kill()
+
             pathlib.Path(self._shm).unlink(missing_ok=True)
             pathlib.Path(self._sock).unlink(missing_ok=True)
 
 
 class VecEnv:
-    """M gyms stepped as one M*per agent batch, gyms tick in parallel across cores."""
+    """M gyms stepped as one M*per agent batch, gyms tick in parallel across cores"""
 
     def __init__(self, num_envs, agents, seed, task, timeout=180.0):
         self.num_envs = num_envs
-        self.per = agents
-        self.agents = num_envs * agents
+        self.per      = agents
+        self.agents   = num_envs * agents
 
         # pool reused for boot and recv, both release the GIL so gyms overlap
         self._pool = ThreadPoolExecutor(max_workers=num_envs)
