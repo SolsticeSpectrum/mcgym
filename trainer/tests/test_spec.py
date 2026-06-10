@@ -5,21 +5,20 @@ from mcgym.schema import spec
 
 def test_obs_dtype_is_packed_little_endian():
     d = spec.OBS_DTYPE
-    # Packed: itemsize == sum of field nbytes (no alignment padding).
+    # packed means itemsize == sum of field nbytes, no alignment padding
     total = sum(d.fields[n][0].itemsize for n in d.names)
     assert d.itemsize == total
-    # voxel_blocks is int32 with 4913 cells.
     assert d.fields["voxel_blocks"][0].shape == (4913,)
     assert d.fields["voxel_blocks"][0].base == np.dtype("<i4")
 
 
 def test_obs_itemsize_matches_hand_count():
-    # 4 + 8 + 4 + 12 + 12 + 4 + 4 + 1 + 4 + 4 + 1            = 58  (header+self)
-    # + 4913*4                                               = 19652 (voxel_blocks, near)
-    # + 4913*4                                               = 19652 (voxel_far)
-    # + 4 + 1 + 4 + 1                                        = 10  (target)
-    # + 16*4 + 16*12 + 16*12 + 16*4 + 16*4 + 16*1            = 592  (entities)
-    # + 41*4 + 41*1                                          = 205  (inventory)
+    # 4 + 8 + 4 + 12 + 12 + 4 + 4 + 1 + 4 + 4 + 1            = 58  header+self
+    # + 4913*4                                               = 19652 voxel_blocks near
+    # + 4913*4                                               = 19652 voxel_far
+    # + 4 + 1 + 4 + 1                                        = 10  target
+    # + 16*4 + 16*12 + 16*12 + 16*4 + 16*4 + 16*1            = 592  entities
+    # + 41*4 + 41*1                                          = 205  inventory
     assert spec.OBS_DTYPE.itemsize == 58 + 19652 + 19652 + 10 + 592 + 205
 
 

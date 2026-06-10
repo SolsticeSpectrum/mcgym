@@ -1,9 +1,4 @@
-"""PPO update: clipped surrogate policy loss, value MSE, entropy bonus.
-
-Mirrors the mechanics of rlgym-ppo: ratio clipping, advantage normalisation,
-value-function coefficient, entropy coefficient, global grad-norm clip, and
-shuffled minibatch epochs.
-"""
+"""ppo update, clipped surrogate, value mse, entropy bonus."""
 from __future__ import annotations
 
 import os
@@ -34,43 +29,40 @@ class Learner:
         self.minibatch = minibatch
         self.grad_clip = grad_clip
         self.device = device
-        # Fused Adam steps all parameters in one kernel instead of one launch per tensor —
-        # the model is many small tensors, so the launch overhead dominates the eager step.
+        # fused adam steps all params in one kernel, launch overhead
+        # dominates the eager step on this many small tensors
         fused = str(device).startswith("cuda")
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr, fused=fused)
-        # bf16 autocast for the SGD forward/backward: the encoder is bandwidth-bound 3D conv +
-        # embedding-gather work, so halving the bytes (and hitting tensor cores) is the win.
-        # Loss math stays fp32 (computed outside the autocast region); weights/optimizer fp32.
+        # bf16 autocast for forward backward, encoder is bandwidth bound so
+        # halving bytes is the win, loss math and weights stay fp32
         self.autocast = fused and bool(os.environ.get("MCAI_BF16"))
-        # Compile only the update's evaluate path: minibatch shape is static, so this is one
-        # compile that fuses the embedding-gather/permute/ReLU chains and cuts kernel launches.
-        # The collect/snapshot models stay eager (deepcopy of compiled modules is fragile).
+        # compile only evaluate, minibatch shape is static so one compile,
+        # collect models stay eager since deepcopy of compiled modules is fragile
         self._evaluate = model.evaluate
         if fused and os.environ.get("MCAI_COMPILE"):
             self._evaluate = torch.compile(model.evaluate)
 
     def update(self, buffer) -> dict:
-        # Metrics stay 0-dim GPU tensors until the end: a .item() per minibatch is a full
-        # device sync, which stalls the SGD pipeline hundreds of times per update.
+        # metrics stay 0 dim gpu tensors until the end, a .item() per
+        # minibatch is a full device sync and stalls the pipeline
         pol_losses, val_losses, entropies, clip_fracs, approx_kls = [], [], [], [], []
 
         t0 = time.perf_counter()
-        data = buffer.to_device(self.device)  # encode the rollout once; epochs reshuffle on-device
+        data = buffer.to_device(self.device)
         enc_s = time.perf_counter() - t0
 
         for _ in range(self.epochs):
             for (
-                obs_tensors,
+                obs,
                 act,
                 old_logprob,
                 advantages,
                 returns,
-                old_value,
             ) in buffer.batches(self.minibatch, self.device, data=data):
                 adv = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
-                    logprob, entropy, value = self._evaluate(obs_tensors, act)
+                    logprob, entropy, value = self._evaluate(obs, act)
                 logprob, entropy, value = logprob.float(), entropy.float(), value.float()
 
                 ratio = torch.exp(logprob - old_logprob)

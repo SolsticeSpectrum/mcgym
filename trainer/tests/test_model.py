@@ -1,4 +1,4 @@
-"""Model + action-space unit tests (fast, CPU; one CUDA forward if available)."""
+"""model and action space unit tests, fast cpu, one cuda forward if available."""
 from __future__ import annotations
 
 import json
@@ -12,11 +12,11 @@ from mcgym.models.actions import BINS, actions_to_records
 from mcgym.models.policy import ActorCritic, tensors
 from mcgym.schema import spec
 
-REGISTRY_PATH = pathlib.Path("/home/user/github/mcai/schema/registry.json")
+REGISTRY = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.json"
 
 
 def _sizes():
-    doc = json.loads(REGISTRY_PATH.read_text())
+    doc = json.loads(REGISTRY.read_text())
     return max(doc["blocks"].values()) + 2, max(doc["items"].values()) + 2
 
 
@@ -29,7 +29,7 @@ def _fake_obs(n=4):
         obs[i]["health"] = 20.0
         obs[i]["food"] = 18.0
         obs[i]["yaw"] = 45.0 * i
-        obs[i]["target_face"] = i % 7  # includes 6 -> treated as invalid
+        obs[i]["target_face"] = i % 7  # 6 treated as invalid
         obs[i]["target_distance"] = 2.5
         obs[i]["target_in_range"] = 1
     return obs
@@ -40,14 +40,14 @@ def test_action_mapping():
     rec = actions_to_records(idx)
     assert rec.dtype == spec.ACTION_DTYPE
     assert rec.shape == (1,)
-    assert rec[0]["forward"] == 1.0  # idx 2 -> 1.0
-    assert rec[0]["strafe"] == -1.0  # idx 0 -> -1.0
+    assert rec[0]["forward"] == 1.0    # bin 2 is 1.0
+    assert rec[0]["strafe"] == -1.0    # bin 0 is -1.0
     assert rec[0]["jump"] == 1
     assert rec[0]["sprint"] == 0
-    assert rec[0]["yaw_delta"] == -10.0  # idx 0 -> -10
-    assert rec[0]["pitch_delta"] == 10.0  # idx 4 -> 10
+    assert rec[0]["yaw_delta"] == -10.0
+    assert rec[0]["pitch_delta"] == 10.0
     assert rec[0]["attack"] == 1
-    # Fixed fields stay zero.
+    # fixed fields stay zero
     assert rec[0]["sneak"] == 0
     assert rec[0]["use"] == 0
     assert rec[0]["selected_slot"] == 0

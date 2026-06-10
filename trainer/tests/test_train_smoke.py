@@ -1,4 +1,4 @@
-"""Slow end-to-end smoke test: real gym, a couple of PPO rollouts."""
+"""slow end to end smoke test, real gym, a couple of ppo rollouts."""
 from __future__ import annotations
 
 import pathlib
@@ -40,7 +40,7 @@ def test_train_smoke():
             env = Env(agents, 0, task)
             obs = env.reset()
 
-            for _ in range(2):  # two rollouts
+            for _ in range(2):
                 buf = Buffer(rollout, agents)
                 for _ in range(rollout):
                     with torch.no_grad():

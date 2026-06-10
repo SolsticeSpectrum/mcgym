@@ -10,7 +10,7 @@ def test_golden_obs_bytes_match_committed_file():
     rec = golden.golden_obs_record()
     produced = codec.encode_obs(rec)
     committed = (FIX / "golden_obs.bin").read_bytes()
-    assert produced == committed, "Obs byte layout changed without a schema_version bump"
+    assert produced == committed, "obs byte layout changed without schema_version bump"
     assert len(committed) == spec.OBS_NBYTES
 
 

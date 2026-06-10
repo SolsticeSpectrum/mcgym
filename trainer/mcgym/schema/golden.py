@@ -1,4 +1,4 @@
-"""Deterministic golden records — the immutable cross-language byte contract."""
+"""deterministic golden records, the immutable cross language byte contract."""
 import numpy as np
 
 from . import spec
@@ -18,7 +18,7 @@ def golden_obs_record() -> dict:
         "health": 20.0,
         "food": 18.0,
         "selected_slot": 4,
-        # Deterministic, varied, bounded block ids.
+        # varied bounded block ids
         "voxel_blocks": (np.arange(edge3, dtype="<i4") % 97),
         "voxel_far": (np.arange(edge3, dtype="<i4") % 89),
         "target_block": 42,

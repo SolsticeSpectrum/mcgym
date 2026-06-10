@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Raw gym throughput: launch the mcgym binary, drive RESET/STEP over the real shm+UDS
-transport with no-op actions, and report ticks/sec (TPS per world) and agent-steps/sec.
-
-Isolates the gym tick cost (worldgen amortised, no policy/GPU). Compare to the Java gym's
-~14 TPS/world. Usage: bench_throughput.py <mcgym binary> [n_agents] [spacing] [steps]
-"""
+"""raw gym throughput, drive RESET/STEP over real shm+uds with noop actions, report ticks/sec."""
 import mmap
 import os
 import socket
@@ -15,13 +10,11 @@ import tempfile
 import time
 
 MAGIC = 0x4D434149
-HEADER = 64
-ACTION_NBYTES = 27
-OBS_NBYTES = 40169
 CMD_RESET, CMD_STEP, CMD_CLOSE, REPLY_OK = b"\x01", b"\x02", b"\x03", 1
 
 
 def main() -> None:
+    # usage: bench_throughput.py <mcgym binary> [agents] [spacing] [steps]
     binary = sys.argv[1] if len(sys.argv) > 1 else "target/release/mcgym"
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 16
     spacing = sys.argv[3] if len(sys.argv) > 3 else "32"

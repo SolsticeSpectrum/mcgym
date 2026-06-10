@@ -1,9 +1,4 @@
-"""Real Python -> Java -> Python round-trip against the live Minecraft gym.
-
-Launches the gym with 2 agents, resets, then walks forward for several steps and
-asserts the agents physically move and that the voxel grid reports real (non-air)
-blocks. No stubs: this is the end-to-end proof the transport works.
-"""
+"""real round trip against the live gym, agents walk and voxels report real blocks."""
 from __future__ import annotations
 
 import pathlib
