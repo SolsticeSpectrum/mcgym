@@ -3,10 +3,10 @@
 
 use std::collections::HashSet;
 
-use mcai_gym::gym::{GymState, decode_agent_obs};
-use mcai_gym::registry::Registry;
-use mcai_gym::schema::OBS_NBYTES;
-use mcai_gym::transport::Gym;
+use mcgym::gym::{GymState, decode_agent_obs};
+use mcgym::registry::Registry;
+use mcgym::schema::OBS_NBYTES;
+use mcgym::transport::Gym;
 
 #[test]
 fn forest_seek_puts_logs_in_observations() {

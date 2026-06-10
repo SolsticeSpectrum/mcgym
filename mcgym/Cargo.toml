@@ -1,16 +1,16 @@
 [package]
-name = "mcai-gym"
+name = "mcgym"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
 description = "Fast headless Minecraft RL gym (Pumpkin-based) for the MCAI trainer"
 
 [lib]
-name = "mcai_gym"
+name = "mcgym"
 path = "src/lib.rs"
 
 [[bin]]
-name = "mcai-gym"
+name = "mcgym"
 path = "src/main.rs"
 
 # Pumpkin world simulation is wired in once the codec + transport are proven.

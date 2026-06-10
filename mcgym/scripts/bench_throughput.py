@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Raw gym throughput: launch the mcai-gym binary, drive RESET/STEP over the real shm+UDS
+"""Raw gym throughput: launch the mcgym binary, drive RESET/STEP over the real shm+UDS
 transport with no-op actions, and report ticks/sec (TPS per world) and agent-steps/sec.
 
 Isolates the gym tick cost (worldgen amortised, no policy/GPU). Compare to the Java gym's
-~14 TPS/world. Usage: bench_throughput.py <mcai-gym binary> [n_agents] [spacing] [steps]
+~14 TPS/world. Usage: bench_throughput.py <mcgym binary> [n_agents] [spacing] [steps]
 """
 import mmap
 import os
@@ -22,7 +22,7 @@ CMD_RESET, CMD_STEP, CMD_CLOSE, REPLY_OK = b"\x01", b"\x02", b"\x03", 1
 
 
 def main() -> None:
-    binary = sys.argv[1] if len(sys.argv) > 1 else "target/release/mcai-gym"
+    binary = sys.argv[1] if len(sys.argv) > 1 else "target/release/mcgym"
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 16
     spacing = sys.argv[3] if len(sys.argv) > 3 else "32"
     steps = int(sys.argv[4]) if len(sys.argv) > 4 else 2000

@@ -33,8 +33,8 @@ def launch_gym(
     or the timeout elapses. World generation makes first boot slow, hence the
     generous default timeout. Returns the running process; the caller owns it.
     """
-    # Rust gym (mcai-gym binary) when MCAI_RUST_GYM points at it; else the Java gradle gym.
-    rust_bin = os.environ.get("MCAI_RUST_GYM")
+    # Rust gym (mcgym binary) when MCGYM points at it; else the Java gradle gym.
+    rust_bin = os.environ.get("MCGYM")
     if rust_bin:
         cmd = [
             rust_bin,

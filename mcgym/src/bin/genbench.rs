@@ -3,7 +3,7 @@
 
 use std::time::Instant;
 
-use mcai_gym::world::World;
+use mcgym::world::World;
 use pumpkin_data::Block;
 
 fn main() {

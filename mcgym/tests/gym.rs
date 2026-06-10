@@ -1,9 +1,9 @@
 //! End-to-end gym assembly: spawn agents, RESET/STEP through the `Gym` trait, and confirm the
 //! emitted observations are valid schema records reflecting real terrain and agent motion.
 
-use mcai_gym::gym::{GymState, decode_agent_obs};
-use mcai_gym::schema::{ACTION_NBYTES, Action, OBS_NBYTES};
-use mcai_gym::transport::Gym;
+use mcgym::gym::{GymState, decode_agent_obs};
+use mcgym::schema::{ACTION_NBYTES, Action, OBS_NBYTES};
+use mcgym::transport::Gym;
 
 #[test]
 fn gym_resets_steps_and_emits_valid_obs() {

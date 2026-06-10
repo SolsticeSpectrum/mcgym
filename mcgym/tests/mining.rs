@@ -1,12 +1,12 @@
 //! Mining: an agent aimed at a log and holding attack breaks it in vanilla-ish time and gains the
 //! log in its inventory, leaving air behind.
 
-use mcai_gym::gym::mine_step;
-use mcai_gym::obs::raycast_target;
-use mcai_gym::physics::Agent;
-use mcai_gym::registry::Registry;
-use mcai_gym::schema::Action;
-use mcai_gym::world::World;
+use mcgym::gym::mine_step;
+use mcgym::obs::raycast_target;
+use mcgym::physics::Agent;
+use mcgym::registry::Registry;
+use mcgym::schema::Action;
+use mcgym::world::World;
 use pumpkin_data::BlockState;
 
 fn is_air_like(world: &World, x: i32, y: i32, z: i32) -> bool {

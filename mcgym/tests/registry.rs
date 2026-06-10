@@ -1,7 +1,7 @@
 //! The world->schema block-id bridge must agree with `schema/registry.json` for the blocks
 //! the policy cares about, and Pumpkin's vanilla blocks should mostly map cleanly.
 
-use mcai_gym::registry::Registry;
+use mcgym::registry::Registry;
 use pumpkin_data::Block;
 
 #[test]
