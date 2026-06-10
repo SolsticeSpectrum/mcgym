@@ -110,12 +110,14 @@ class TrainMonitor:
         attacking = 0
         if self._latest_action is not None and gi < len(self._latest_action):
             attacking = int(self._latest_action[gi][6] != 0)  # head 6 = attack
+        # Block at the agent's eye (one cell above the feet/centre) — for the POV medium overlay.
+        head = int(vox[((1 + r) * edge + r) * edge + r])
         return {
             "env": env, "i": i, "edge": edge,
             "yaw": round(float(o["yaw"]), 1), "pitch": round(float(o["pitch"]), 1),
             "wood": int((np.isin(o["inv_item_id"], self._log_arr) * o["inv_count"]).sum()),
             "look": in_range, "target": int(o["target_block"]), "targetPos": tpos,
-            "attacking": attacking,
+            "attacking": attacking, "head": head,
             "cells": cells,
         }
 

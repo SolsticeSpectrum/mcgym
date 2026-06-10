@@ -2,6 +2,9 @@ import * as THREE from 'three'
 
 const EDGE = 17
 const MAX = EDGE * EDGE * EDGE
+// MCAI registry block ids (schema/registry.json).
+export const WATER = 35
+export const LAVA = 36
 
 // A reusable three.js scene of one agent's near voxel grid. Exposes handles so callers can
 // toggle Steve (hidden in POV/top-down) and the facing arrow (shown only top-down), and set
@@ -37,8 +40,8 @@ export function createVoxelScene() {
   }
 
   function buildBlocks(cells, palette) {
-    const occ = new Set()
-    for (const c of cells) occ.add(key(c[0], c[1], c[2]))
+    const occ = new Map()
+    for (const c of cells) occ.set(key(c[0], c[1], c[2]), c[3])
     const pos = []
     const nor = []
     const colr = []
@@ -49,7 +52,12 @@ export function createVoxelScene() {
         const [nx, ny, nz] = f.n
         const bx = dx + nx, by = dy + ny, bz = dz + nz
         const inside = bx >= -8 && bx <= 8 && by >= -8 && by <= 8 && bz >= -8 && bz <= 8
-        if (inside && occ.has(key(bx, by, bz))) continue // neighbour solid -> face hidden
+        if (inside) {
+          const nid = occ.get(key(bx, by, bz))
+          // Cull only behind an opaque neighbour, or between two of the same fluid. Water/lava
+          // don't occlude (see through them), but their faces exposed to air always render.
+          if (nid !== undefined && ((nid !== WATER && nid !== LAVA) || nid === id)) continue
+        }
         for (const vi of TRI) {
           const v = f.c[vi]
           pos.push(dx + v[0], dy + v[1], dz + v[2])

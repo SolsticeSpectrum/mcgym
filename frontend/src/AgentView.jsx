@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { createVoxelScene } from './voxelScene.js'
+import { createVoxelScene, WATER, LAVA } from './voxelScene.js'
 import { drawAgentMini } from './miniRender.js'
+
+const mediumTint = (head) =>
+  head === WATER ? 'rgba(40,90,210,0.42)' : head === LAVA ? 'rgba(235,110,20,0.5)' : null
 
 const POVW = 168
 const VH = 110
@@ -106,7 +109,12 @@ export default function AgentView({ env, i, palette }) {
           <span>POV</span><span style={{ color: '#5b6378' }}>drag · resize ↘</span><span>top-down</span>
         </div>
         <div style={{ display: 'flex' }}>
-          <canvas ref={povRef} width={povW} height={size.h} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+          <div style={{ position: 'relative' }}>
+            <canvas ref={povRef} width={povW} height={size.h} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+            {info && mediumTint(info.head) && (
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: mediumTint(info.head) }} />
+            )}
+          </div>
           <canvas ref={topRef} width={size.h} height={size.h} style={{ display: 'block' }} />
         </div>
         <div onPointerDown={startResize} title="resize"
