@@ -1,5 +1,4 @@
-//! Forest-seek spawning: agents should start near trees, so logs appear in their observations —
-//! the precondition for ever learning to gather wood.
+//! forest seek spawning, agents should start near trees so logs appear in observations
 
 use std::collections::HashSet;
 
@@ -40,8 +39,7 @@ fn forest_seek_puts_logs_in_observations() {
         })
         .count();
 
-    // Forest-seek can't conjure trees in a desert, but across spread spawns most should land in
-    // forests with logs in view.
+    // forest seek cant conjure trees in a desert but most spread spawns should land near logs
     assert!(
         near_trees >= n / 2,
         "expected most agents near trees, only {near_trees}/{n} had logs in view"

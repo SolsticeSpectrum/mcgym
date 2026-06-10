@@ -1,5 +1,4 @@
-//! Mining: an agent aimed at a log and holding attack breaks it in vanilla-ish time and gains the
-//! log in its inventory, leaving air behind.
+//! mining, agent aimed at a log holding attack breaks it in vanilla-ish time and gains the log
 
 use mcgym::gym::mine_step;
 use mcgym::obs::raycast_target;
@@ -25,7 +24,7 @@ fn agent_mines_a_log_into_inventory() {
         }
     }
 
-    // Find a log with a clear air approach from its -Z side so we can aim at it.
+    // find a log with a clear air approach from its -z side so we can aim at it
     let mut found = None;
     'scan: for x in 0..64 {
         for z in 2..64 {
@@ -41,9 +40,9 @@ fn agent_mines_a_log_into_inventory() {
             }
         }
     }
-    let (lx, ly, lz) = found.expect("a log with a clear -Z approach");
+    let (lx, ly, lz) = found.expect("a log with a clear -z approach");
 
-    // Stand just south of the log (yaw 0 => looking +Z), eye at the log's mid-height.
+    // stand just south of the log (yaw 0 => looking +z), eye at the log's mid height
     let mut agent = Agent::new(
         [f64::from(lx) + 0.5, f64::from(ly) - 1.12, f64::from(lz) - 1.5],
         0.0,
@@ -55,8 +54,8 @@ fn agent_mines_a_log_into_inventory() {
         "agent should be aimed at the log, got {aim:?}"
     );
 
-    // Hold attack; with an axe (speed 6) on a log (hardness 2): ~0.1/tick -> ~10 ticks.
-    let attack = Action { attack: 1, ..Default::default() };
+    // hold attack, axe (speed 6) on a log (hardness 2) is ~0.1/tick -> ~10 ticks
+    let attack    = Action { attack: 1, ..Default::default() };
     let mut broke = None;
     for t in 0..30 {
         if let Some(item) = mine_step(&mut agent, &mut world, &reg, &attack) {
