@@ -83,6 +83,13 @@ train_mode() {
 
     (cd "$SRC/mcgym" && cargo build --release)
 
+    # frontend for the monitor, dist is a build artifact and not in git
+    command -v npm >/dev/null || {
+        fakeroot apt-get update
+        fakeroot apt-get install -y nodejs npm
+    }
+    (cd "$SRC/frontend" && npm install --silent && npm run build)
+
     # The wood task, forever: train_box.sh carries the tuned defaults; the compose
     # passes knob overrides via the supervisord program environment. RESUME=1 is
     # safe with no checkpoint (fresh start). Crashes restart after a pause.
