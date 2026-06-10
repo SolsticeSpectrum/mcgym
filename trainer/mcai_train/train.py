@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import pathlib
+import threading
 import time
 
 import numpy as np
@@ -17,7 +19,8 @@ from mcai_train.ppo.learner import PPOLearner
 from mcai_train.schema import spec
 from mcai_train.schema.registry import Registry
 
-REGISTRY_PATH = pathlib.Path("/home/user/github/mcai/schema/registry.json")
+# Repo-relative so it works regardless of checkout location (train.py -> mcai_train -> trainer -> repo root).
+REGISTRY_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.json"
 
 
 def _model_sizes(registry_path: pathlib.Path) -> tuple[int, int]:
@@ -42,7 +45,29 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--checkpoint-every", type=int, default=20_000)
     p.add_argument("--minibatch", type=int, default=2048)
     p.add_argument("--epochs", type=int, default=3)
+    p.add_argument(
+        "--model-scale",
+        type=int,
+        default=1,
+        help="width multiplier for the policy/value net (1 = 646k-param default tuned for a "
+        "GTX 1060; raise to ~4-8 on a big GPU for more capacity + GPU work per forward). Must "
+        "match the checkpoint when resuming.",
+    )
     p.add_argument("--resume", action="store_true")
+    p.add_argument(
+        "--pipeline",
+        action="store_true",
+        help="overlap the PPO update (GPU) with the next rollout's collect (CPU gyms) via a "
+        "background-thread update + a snapshot policy for collecting; bounded 1-rollout staleness",
+    )
+    p.add_argument(
+        "--async-collect",
+        action="store_true",
+        help="2-cohort pipelined collection: split gyms into cohorts A/B and overlap A's gym "
+        "ticks (CPU/cores) with B's policy forward (GPU) and vice versa, so neither waits. "
+        "Combined with the background-thread update, keeps both the cores and the GPU busy. "
+        "Requires --num-envs >= 2 (even split). Bounded 1-rollout policy staleness.",
+    )
     p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
     p.add_argument("--arena", default="", help="gym arena mode, e.g. 'flat'")
     p.add_argument("--num-envs", type=int, default=1,
@@ -66,9 +91,9 @@ def train(args: argparse.Namespace) -> None:
     num_blocks, num_items = _model_sizes(REGISTRY_PATH)
     print(f"[train] device={device} num_blocks={num_blocks} num_items={num_items}")
 
-    model = ActorCritic(num_blocks, num_items).to(device)
+    model = ActorCritic(num_blocks, num_items, scale=args.model_scale).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"[train] model params: {n_params:,}")
+    print(f"[train] model params: {n_params:,} (scale={args.model_scale})")
 
     learner = PPOLearner(
         model,
@@ -85,14 +110,32 @@ def train(args: argparse.Namespace) -> None:
             cumulative_timesteps = int(meta["cumulative_timesteps"])
             print(f"[train] resumed at {cumulative_timesteps} timesteps")
 
-    if args.num_envs > 1:
+    # --async-collect splits the gyms into two cohorts (A/B) that step offset so one's gym ticks
+    # overlap the other's policy forward. Otherwise a single (vec-)env stepped in lockstep.
+    env = None
+    cohorts = None
+    if args.async_collect:
+        if args.num_envs < 2:
+            raise SystemExit("--async-collect requires --num-envs >= 2")
+        ka = args.num_envs // 2
+        kb = args.num_envs - ka
+        envA = ParallelVecEnv(ka, args.n_agents, args.seed, registry,
+                              episode_len=args.episode_len, curriculum=args.curriculum,
+                              arena=args.arena)
+        envB = ParallelVecEnv(kb, args.n_agents, args.seed + 10_000, registry,
+                              episode_len=args.episode_len, curriculum=args.curriculum,
+                              arena=args.arena)
+        cohorts = [envA, envB]
+        n = envA.n_agents + envB.n_agents
+    elif args.num_envs > 1:
         env = ParallelVecEnv(args.num_envs, args.n_agents, args.seed, registry,
                              episode_len=args.episode_len, curriculum=args.curriculum,
                              arena=args.arena)
+        n = env.n_agents
     else:
         env = WoodEnv(args.n_agents, args.seed, registry, episode_len=args.episode_len,
                       curriculum=args.curriculum, arena=args.arena)
-    n = env.n_agents  # total agents across all parallel gyms
+        n = env.n_agents
     buffer = RolloutBuffer(args.rollout_len, n)
 
     monitor = None
@@ -119,7 +162,8 @@ def train(args: argparse.Namespace) -> None:
             "num_items": num_items,
         }
 
-    obs_struct = env.reset()
+    # Async manages its own per-cohort obs/ep tracking inside run_async().
+    obs_struct = env.reset() if env is not None else None
     ep_reward = np.zeros(n, dtype=np.float64)
     # Episodes (len 500) usually span multiple rollouts (len 128), so most
     # rollouts complete no episode. Carry the mean episode return across
@@ -129,77 +173,174 @@ def train(args: argparse.Namespace) -> None:
     last_ckpt = cumulative_timesteps
     start = time.monotonic()
 
-    try:
-        while cumulative_timesteps < args.total_timesteps:
-            buffer.reset()
-            rollout_start = time.monotonic()
-            completed_ep_rewards = []
-
-            for _ in range(args.rollout_len):
-                with torch.no_grad():
-                    tensors = obs_to_tensors(obs_struct, device)
-                    action_idx, logprob, value = model.get_action(tensors)
-                action_np = action_idx.cpu().numpy()
-
-                next_obs, reward, done = env.step(action_np)
-                buffer.add(
-                    obs_struct,
-                    action_np,
-                    logprob.cpu().numpy(),
-                    reward,
-                    value.cpu().numpy(),
-                    done,
-                )
-                ep_reward += reward
-                if done.all():
-                    completed_ep_rewards.extend(ep_reward.tolist())
-                    ep_reward = np.zeros(n, dtype=np.float64)
-                obs_struct = next_obs
-                if monitor is not None:
-                    monitor.update(next_obs, action_np, reward, cumulative_timesteps)
-
-            collect_end = time.monotonic()
+    def collect_rollout(cmodel, buf):
+        """Collect one rollout into `buf` using `cmodel` for action selection. Returns the list of
+        episode returns that completed during the rollout. Threads `obs_struct`/`ep_reward`."""
+        nonlocal obs_struct, ep_reward
+        buf.reset()
+        completed = []
+        for _ in range(args.rollout_len):
             with torch.no_grad():
-                last_value = model.get_action(obs_to_tensors(obs_struct, device))[2]
-            buffer.compute_gae(last_value.cpu().numpy())
+                tensors = obs_to_tensors(obs_struct, device)
+                action_idx, logprob, value = cmodel.get_action(tensors)
+            action_np = action_idx.cpu().numpy()
+            next_obs, reward, done = env.step(action_np)
+            buf.add(obs_struct, action_np, logprob.cpu().numpy(), reward, value.cpu().numpy(), done)
+            ep_reward += reward
+            if done.all():
+                completed.extend(ep_reward.tolist())
+                ep_reward = np.zeros(n, dtype=np.float64)
+            obs_struct = next_obs
+            if monitor is not None:
+                monitor.update(next_obs, action_np, reward, cumulative_timesteps)
+        with torch.no_grad():
+            last_value = cmodel.get_action(obs_to_tensors(obs_struct, device))[2]
+        buf.compute_gae(last_value.cpu().numpy())
+        return completed
 
-            metrics = learner.update(buffer)
-            update_secs = time.monotonic() - collect_end
-            collect_secs = collect_end - rollout_start
-            cumulative_timesteps += args.rollout_len * n
+    def log_iter(metrics, completed, collect_secs, update_secs, wood_mean, ep_fallback):
+        nonlocal ep_rew_ema, cumulative_timesteps, last_ckpt
+        cumulative_timesteps += args.rollout_len * n
+        sps = (args.rollout_len * n) / max(collect_secs + update_secs, 1e-6)
+        if completed:
+            rollout_mean = float(np.mean(completed))
+            ep_rew_ema = (
+                rollout_mean
+                if ep_rew_ema is None
+                else EP_EMA_BETA * ep_rew_ema + (1.0 - EP_EMA_BETA) * rollout_mean
+            )
+        mean_ep_r = ep_rew_ema if ep_rew_ema is not None else ep_fallback
+        print(
+            f"[train] t={cumulative_timesteps} "
+            f"ep_rew={mean_ep_r:.3f} wood/agent={wood_mean:.2f} "
+            f"pi_loss={metrics['policy_loss']:.4f} v_loss={metrics['value_loss']:.4f} "
+            f"ent={metrics['entropy']:.3f} clip={metrics['clip_frac']:.3f} "
+            f"sps={sps:.0f} collect={collect_secs:.1f}s update={update_secs:.1f}s"
+        )
+        if cumulative_timesteps - last_ckpt >= args.checkpoint_every:
+            checkpoint.save(ckpt_dir, model, learner.optimizer, make_meta())
+            last_ckpt = cumulative_timesteps
+            print(f"[train] checkpoint @ {cumulative_timesteps}")
 
-            wood = env.wood_held(obs_struct)
-            elapsed = time.monotonic() - rollout_start
-            sps = (args.rollout_len * n) / max(elapsed, 1e-6)
-            if completed_ep_rewards:
-                rollout_mean = float(np.mean(completed_ep_rewards))
-                ep_rew_ema = (
-                    rollout_mean
-                    if ep_rew_ema is None
-                    else EP_EMA_BETA * ep_rew_ema + (1.0 - EP_EMA_BETA) * rollout_mean
+    def wood_mean_of(obs_batch):
+        return float(env.wood_held(obs_batch).mean())
+
+    def run_async():
+        # Two cohorts step offset: while A's gyms tick (CPU/cores), B's policy forward runs (GPU),
+        # then vice versa — neither waits on the other. The PPO update runs on a background thread
+        # (overlapping the next collect). Bounded 1-rollout policy staleness.
+        envA, envB = cohorts
+        bufs = [RolloutBuffer(args.rollout_len, n), RolloutBuffer(args.rollout_len, n)]
+        inf = [copy.deepcopy(model).eval()]
+        obsA, obsB = envA.reset(), envB.reset()
+        epr = np.zeros(n, dtype=np.float64)
+        result: dict = {}
+
+        def run_update(b):
+            result["m"] = learner.update(b)
+
+        def fwd(m, obs):
+            with torch.no_grad():
+                a, lp, v = m.get_action(obs_to_tensors(obs, device))
+            return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
+
+        def collect(buf):
+            nonlocal obsA, obsB, epr
+            buf.reset()
+            completed = []
+            m = inf[0]
+            for _ in range(args.rollout_len):
+                aA, lpA, vA = fwd(m, obsA)
+                envA.step_send(aA)              # A's gyms tick (CPU) ...
+                aB, lpB, vB = fwd(m, obsB)      # ... while B's forward runs (GPU)
+                envB.step_send(aB)
+                oA, rA, dA = envA.step_recv()
+                oB, rB, dB = envB.step_recv()
+                buf.add(
+                    np.concatenate([obsA, obsB]), np.concatenate([aA, aB]),
+                    np.concatenate([lpA, lpB]), np.concatenate([rA, rB]),
+                    np.concatenate([vA, vB]), np.concatenate([dA, dB]),
                 )
-            # Report the running EMA; before any episode completes, fall back to
-            # the in-progress mean return so the line is always a real number.
-            mean_ep_r = (
-                ep_rew_ema if ep_rew_ema is not None else float(ep_reward.mean())
-            )
-            print(
-                f"[train] t={cumulative_timesteps} "
-                f"ep_rew={mean_ep_r:.3f} wood/agent={wood.mean():.2f} "
-                f"pi_loss={metrics['policy_loss']:.4f} v_loss={metrics['value_loss']:.4f} "
-                f"ent={metrics['entropy']:.3f} clip={metrics['clip_frac']:.3f} "
-                f"sps={sps:.0f} collect={collect_secs:.1f}s update={update_secs:.1f}s"
-            )
+                rew = np.concatenate([rA, rB])
+                epr += rew
+                if dA.all() and dB.all():
+                    completed.extend(epr.tolist())
+                    epr = np.zeros(n, dtype=np.float64)
+                obsA, obsB = oA, oB
+                if monitor is not None:
+                    monitor.update(np.concatenate([obsA, obsB]),
+                                   np.concatenate([aA, aB]), rew, cumulative_timesteps)
+            _, _, lvA = fwd(m, obsA)
+            _, _, lvB = fwd(m, obsB)
+            buf.compute_gae(np.concatenate([lvA, lvB]))
+            return completed
 
-            if cumulative_timesteps - last_ckpt >= args.checkpoint_every:
-                checkpoint.save(ckpt_dir, model, learner.optimizer, make_meta())
-                last_ckpt = cumulative_timesteps
-                print(f"[train] checkpoint @ {cumulative_timesteps}")
+        def wood_mean():
+            return float(np.concatenate([envA.wood_held(obsA), envB.wood_held(obsB)]).mean())
+
+        cur = 0
+        completed_prev = collect(bufs[cur])  # prime
+        while cumulative_timesteps < args.total_timesteps:
+            t0 = time.monotonic()
+            th = threading.Thread(target=run_update, args=(bufs[cur],), daemon=True)
+            th.start()
+            nxt = 1 - cur
+            completed = collect(bufs[nxt])      # collect (cores+GPU overlap) || update (GPU)
+            th.join()
+            inf[0] = copy.deepcopy(model).eval()  # sync collect policy to the updated weights
+            log_iter(result["m"], completed_prev, time.monotonic() - t0, 0.0,
+                     wood_mean(), float(epr.mean()))
+            completed_prev = completed
+            cur = nxt
+
+    try:
+        if cohorts is not None:
+            run_async()
+        elif args.pipeline:
+            # Overlap the update (GPU) with the next collect (CPU gyms). A separate snapshot policy
+            # collects while the live model trains on a background thread — disjoint modules, so no
+            # races; the collecting policy is one rollout stale (PPO tolerates it).
+            collect_model = copy.deepcopy(model)
+            collect_model.eval()
+            bufs = [buffer, RolloutBuffer(args.rollout_len, n)]
+            cur = 0
+            completed_prev = collect_rollout(model, bufs[cur])  # prime
+            result: dict = {}
+
+            def run_update(b):
+                result["m"] = learner.update(b)
+
+            while cumulative_timesteps < args.total_timesteps:
+                t0 = time.monotonic()
+                collect_model.load_state_dict(model.state_dict())  # pre-update snapshot
+                th = threading.Thread(target=run_update, args=(bufs[cur],), daemon=True)
+                th.start()
+                nxt = 1 - cur
+                completed = collect_rollout(collect_model, bufs[nxt])
+                th.join()
+                overlapped = time.monotonic() - t0
+                log_iter(result["m"], completed_prev, overlapped, 0.0,
+                         wood_mean_of(obs_struct), float(ep_reward.mean()))
+                completed_prev = completed
+                cur = nxt
+        else:
+            while cumulative_timesteps < args.total_timesteps:
+                rollout_start = time.monotonic()
+                completed = collect_rollout(model, buffer)
+                collect_end = time.monotonic()
+                metrics = learner.update(buffer)
+                update_secs = time.monotonic() - collect_end
+                log_iter(metrics, completed, collect_end - rollout_start, update_secs,
+                         wood_mean_of(obs_struct), float(ep_reward.mean()))
     except KeyboardInterrupt:
         print("[train] interrupted; saving final checkpoint")
     finally:
         checkpoint.save(ckpt_dir, model, learner.optimizer, make_meta())
-        env.close()
+        if cohorts is not None:
+            for c in cohorts:
+                c.close()
+        elif env is not None:
+            env.close()
         total_elapsed = time.monotonic() - start
         print(f"[train] done: {cumulative_timesteps} timesteps in {total_elapsed:.1f}s")
 
