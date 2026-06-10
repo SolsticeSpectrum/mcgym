@@ -246,13 +246,20 @@ def train(args: argparse.Namespace) -> None:
         # host until the forward lands, which also enforces correct ordering (no cross-stream race).
         collect_stream = torch.cuda.Stream() if str(device).startswith("cuda") else None
 
+        # Compile the collect forward too (static 576-agent batch): the eager small-batch
+        # forward is launch-overhead-bound. Compiling the bound method keeps load_state_dict
+        # weight syncs working — the compiled code reads the module's current params each call.
+        get_action = inf[0].get_action
+        if collect_stream is not None and os.environ.get("MCAI_COMPILE"):
+            get_action = torch.compile(inf[0].get_action)
+
         def fwd(m, obs):
             with torch.no_grad():
                 if collect_stream is not None:
                     with torch.cuda.stream(collect_stream):
-                        a, lp, v = m.get_action(obs_to_tensors(obs, device))
+                        a, lp, v = get_action(obs_to_tensors(obs, device))
                         return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
-                a, lp, v = m.get_action(obs_to_tensors(obs, device))
+                a, lp, v = get_action(obs_to_tensors(obs, device))
             return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
 
         prof_on = bool(os.environ.get("MCAI_PROFILE"))
