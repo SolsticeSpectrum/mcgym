@@ -38,6 +38,10 @@ class PPOLearner:
         # the model is many small tensors, so the launch overhead dominates the eager step.
         fused = str(device).startswith("cuda")
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr, fused=fused)
+        # bf16 autocast for the SGD forward/backward: the encoder is bandwidth-bound 3D conv +
+        # embedding-gather work, so halving the bytes (and hitting tensor cores) is the win.
+        # Loss math stays fp32 (computed outside the autocast region); weights/optimizer fp32.
+        self.autocast = fused and bool(os.environ.get("MCAI_BF16"))
 
     def update(self, buffer) -> dict:
         # Metrics stay 0-dim GPU tensors until the end: a .item() per minibatch is a full
@@ -59,7 +63,9 @@ class PPOLearner:
             ) in buffer.iter_minibatches(self.minibatch, self.device, data=data):
                 adv = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-                logprob, entropy, value = self.model.evaluate(obs_tensors, action_idx)
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
+                    logprob, entropy, value = self.model.evaluate(obs_tensors, action_idx)
+                logprob, entropy, value = logprob.float(), entropy.float(), value.float()
 
                 ratio = torch.exp(logprob - old_logprob)
                 surr1 = ratio * adv
