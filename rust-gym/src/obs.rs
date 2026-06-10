@@ -20,6 +20,7 @@ const EYE_HEIGHT: f64 = 1.62;
 pub const BLOCK_REACH: f64 = 4.5;
 
 /// Fill one voxel grid centred at block (cx,cy,cz) with the given stride (1 = near, 4 = far).
+/// Delegates to `World::fill_voxels`, which caches the chunk pointer across cells.
 pub fn fill_voxels(
     world: &World,
     reg: &Registry,
@@ -30,19 +31,7 @@ pub fn fill_voxels(
     out: &mut [i32],
 ) {
     debug_assert_eq!(out.len(), VOXEL_CELLS);
-    let r = VOXEL_RADIUS as i32;
-    let edge = VOXEL_EDGE as i32;
-    for dy in -r..=r {
-        for dz in -r..=r {
-            for dx in -r..=r {
-                let index = (((dy + r) * edge + (dz + r)) * edge + (dx + r)) as usize;
-                let id = world
-                    .block_state_raw(cx + dx * stride, cy + dy * stride, cz + dz * stride)
-                    .map_or(0, |s| reg.block(s));
-                out[index] = id;
-            }
-        }
-    }
+    world.fill_voxels(reg, cx, cy, cz, stride, out);
 }
 
 /// Flat index of the grid centre cell (dx=dy=dz=0). The block the agent stands in.

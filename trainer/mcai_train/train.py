@@ -287,7 +287,9 @@ def train(args: argparse.Namespace) -> None:
             nxt = 1 - cur
             completed = collect(bufs[nxt])      # collect (cores+GPU overlap) || update (GPU)
             th.join()
-            inf[0] = copy.deepcopy(model).eval()  # sync collect policy to the updated weights
+            # Sync the collect policy to the updated weights. Safe here: the collector is idle
+            # (between rollouts). load_state_dict reuses the inference model (no per-rollout realloc).
+            inf[0].load_state_dict(model.state_dict())
             log_iter(result["m"], completed_prev, time.monotonic() - t0, 0.0,
                      wood_mean(), float(epr.mean()))
             completed_prev = completed

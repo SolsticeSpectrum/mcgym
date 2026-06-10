@@ -42,9 +42,12 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     """
     obs = obs_struct_batch
 
-    voxel = np.ascontiguousarray(obs["voxel_blocks"]).astype(np.int64)
-    voxel_far = np.ascontiguousarray(obs["voxel_far"]).astype(np.int64)
-    target_block = np.ascontiguousarray(obs["target_block"]).astype(np.int64)
+    # Keep the voxel/id grids as int32 for the CPU->GPU transfer (they are i32 in the schema);
+    # upcast to long on the GPU inside the encoder. Transferring int32 instead of int64 halves
+    # the H2D traffic, which dominates both collect and the per-minibatch update re-encode.
+    voxel = np.ascontiguousarray(obs["voxel_blocks"])
+    voxel_far = np.ascontiguousarray(obs["voxel_far"])
+    target_block = np.ascontiguousarray(obs["target_block"])
 
     vel = np.ascontiguousarray(obs["vel"]).astype(np.float32)
     yaw = np.ascontiguousarray(obs["yaw"]).astype(np.float32)
@@ -56,7 +59,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     target_in_range = np.ascontiguousarray(obs["target_in_range"]).astype(np.float32)
     target_face = np.ascontiguousarray(obs["target_face"]).astype(np.int64)
 
-    inv_item_id = np.ascontiguousarray(obs["inv_item_id"]).astype(np.int64)
+    inv_item_id = np.ascontiguousarray(obs["inv_item_id"])
     inv_count = np.ascontiguousarray(obs["inv_count"]).astype(np.float32)
 
     yaw_r = np.deg2rad(yaw)
@@ -136,14 +139,14 @@ class ObsEncoder(nn.Module):
         )
 
     def encode(self, obs_tensors: dict) -> torch.Tensor:
-        voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1)
+        voxel = obs_tensors["voxel"].clamp(0, self.num_blocks - 1).long()
         b = voxel.shape[0]
         v = self.block_embed(voxel)  # (B, 4913, 8)
         v = v.permute(0, 2, 1).reshape(b, self.embed_dim, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
         v = self.voxel_conv(v).reshape(b, -1)
         v = self.voxel_fc(v)
 
-        voxel_far = obs_tensors["voxel_far"].clamp(0, self.num_blocks - 1)
+        voxel_far = obs_tensors["voxel_far"].clamp(0, self.num_blocks - 1).long()
         vf = self.block_embed(voxel_far)
         vf = vf.permute(0, 2, 1).reshape(b, self.embed_dim, VOXEL_EDGE, VOXEL_EDGE, VOXEL_EDGE)
         vf = self.voxel_conv_far(vf).reshape(b, -1)
@@ -151,13 +154,13 @@ class ObsEncoder(nn.Module):
 
         s = self.scalar_fc(obs_tensors["scalars"])
 
-        inv_ids = obs_tensors["inv_item_id"].clamp(0, self.num_items - 1)
+        inv_ids = obs_tensors["inv_item_id"].clamp(0, self.num_items - 1).long()
         inv_emb = self.item_embed(inv_ids)  # (B, 41, 8)
         weight = torch.log1p(obs_tensors["inv_count"]).unsqueeze(-1)  # (B, 41, 1)
         inv = (inv_emb * weight).sum(dim=1)  # (B, 8)
         inv = self.inv_fc(inv)
 
-        tb = obs_tensors["target_block"].clamp(0, self.num_blocks - 1)
+        tb = obs_tensors["target_block"].clamp(0, self.num_blocks - 1).long()
         tgt = self.target_fc(self.block_embed(tb))  # (B, 16)
 
         return self.fuse(torch.cat([v, vf, s, inv, tgt], dim=1))
