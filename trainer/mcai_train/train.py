@@ -256,20 +256,20 @@ def train(args: argparse.Namespace) -> None:
                 envB.step_send(aB)
                 oA, rA, dA = envA.step_recv()
                 oB, rB, dB = envB.step_recv()
-                buf.add(
-                    np.concatenate([obsA, obsB]), np.concatenate([aA, aB]),
-                    np.concatenate([lpA, lpB]), np.concatenate([rA, rB]),
-                    np.concatenate([vA, vB]), np.concatenate([dA, dB]),
-                )
+                # Concatenate each field once and reuse (was concatenating obs+act twice/step:
+                # once for the buffer, once for the monitor — ~46 MB obs copy each).
+                obs_cat = np.concatenate([obsA, obsB])
+                act_cat = np.concatenate([aA, aB])
                 rew = np.concatenate([rA, rB])
+                buf.add(obs_cat, act_cat, np.concatenate([lpA, lpB]), rew,
+                        np.concatenate([vA, vB]), np.concatenate([dA, dB]))
                 epr += rew
                 if dA.all() and dB.all():
                     completed.extend(epr.tolist())
                     epr = np.zeros(n, dtype=np.float64)
                 obsA, obsB = oA, oB
                 if monitor is not None:
-                    monitor.update(np.concatenate([obsA, obsB]),
-                                   np.concatenate([aA, aB]), rew, cumulative_timesteps)
+                    monitor.update(obs_cat, act_cat, rew, cumulative_timesteps)
             _, _, lvA = fwd(m, obsA)
             _, _, lvB = fwd(m, obsB)
             buf.compute_gae(np.concatenate([lvA, lvB]))
