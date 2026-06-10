@@ -1,5 +1,4 @@
 //! shm + uds bridge to the python trainer, mirrors trainer transport.py
-//! mapped file: 64 byte header, ACTION region (python writes), OBS region (gym writes)
 
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
@@ -20,8 +19,7 @@ pub const REPLY_OK:         u8 = 1;
 
 pub const READY_LINE:     &str = "MCAI_TRANSPORT_READY";
 
-/// gym behaviour the transport drives, actions is the whole ACTION region,
-/// obs is the whole OBS region (write it fully)
+// actions is the whole ACTION region, obs is the whole OBS region (write it fully)
 pub trait Gym {
     fn reset(&mut self, obs: &mut [u8]);
     fn step(&mut self, actions: &[u8], obs: &mut [u8]);
@@ -36,7 +34,6 @@ pub struct Transport {
 }
 
 impl Transport {
-    /// create + size + map the shm file, write the header, bind the uds listener
     pub fn create(shm_path: &Path, sock_path: &Path, n_agents: usize) -> io::Result<Self> {
         let obs_off = HEADER_NBYTES + n_agents * ACTION_NBYTES;
         let total   = obs_off + n_agents * OBS_NBYTES;
@@ -71,26 +68,24 @@ impl Transport {
         })
     }
 
-    /// announce readiness on stdout so the launcher can detect it
     pub fn signal_ready(&self) {
         println!("{READY_LINE}");
         let _ = io::stdout().flush();
     }
 
-    /// block until the driver connects
     pub fn accept(&mut self) -> io::Result<()> {
         let (stream, _addr) = self.listener.accept()?;
         self.client = Some(stream);
         Ok(())
     }
 
-    /// disjoint slices into the mapped file (ACTION region, OBS region)
+    // disjoint slices into the mapped file, (ACTION region, OBS region)
     fn regions(&mut self) -> (&[u8], &mut [u8]) {
         let (head_and_actions, obs) = self.mmap.split_at_mut(self.obs_off);
         (&head_and_actions[HEADER_NBYTES..], obs)
     }
 
-    /// run the command loop until CLOSE or the socket drops, accept must precede this
+    // command loop until CLOSE or the socket drops
     pub fn serve<G: Gym>(&mut self, gym: &mut G) -> io::Result<()> {
         let mut stream = self
             .client
@@ -104,6 +99,7 @@ impl Transport {
                 }
                 return Err(e);
             }
+
             match cmd[0] {
                 CMD_RESET => {
                     let (_actions, obs) = self.regions();

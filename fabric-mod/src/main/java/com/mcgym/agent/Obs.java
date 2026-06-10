@@ -16,27 +16,21 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
-/**
- * Builds the policy inputs from the live client, a 1 to 1 port of the trainers
- * encoding, field order, voxel indexing, scalar layout and inventory slots match
- * the gym byte for byte.
- */
 public final class Obs {
 
-    public static final int RADIUS = 8;
-    public static final int EDGE   = 17;
-    public static final int COUNT  = 4913;          // 17^3
-    public static final int STRIDE = 4;             // far shell samples every 4th block
-    public static final int SLOTS  = 41;            // 36 main + 4 armor + 1 offhand
-    public static final double REACH = 4.5;
+    public static final int    RADIUS = 8;
+    public static final int    EDGE   = 17;
+    public static final int    COUNT  = 4913;  // 17^3
+    public static final int    STRIDE = 4;     // far shell samples every 4th block
+    public static final int    SLOTS  = 41;    // 36 main + 4 armor + 1 offhand
+    public static final double REACH  = 4.5;
 
-    public final int[] voxel = new int[COUNT];
-    public final int[] voxelFar = new int[COUNT];
-    public final float[] scalars = new float[Policy.SCALARS];
-    public final int[] invId = new int[SLOTS];
+    public final int[]   voxel    = new int[COUNT];
+    public final int[]   voxelFar = new int[COUNT];
+    public final float[] scalars  = new float[Policy.SCALARS];
+    public final int[]   invId    = new int[SLOTS];
     public final float[] invCount = new float[SLOTS];
 
-    /** Block id of the raycast target this build, 0 when none. */
     public int target;
 
     private final Registry registry;
@@ -51,7 +45,7 @@ public final class Obs {
         if (player == null || world == null) return;
 
         // voxel grids, index = ((dy+8)*17 + (dz+8))*17 + (dx+8), loop dy dz dx
-        // matches the gym exactly, unloaded chunks read as air like the gym
+        // unloaded chunks read as air like the gym
         BlockPos center = BlockPos.ofFloored(player.getX(), player.getY(), player.getZ());
         BlockPos.Mutable cursor = new BlockPos.Mutable();
         for (int dy = -RADIUS; dy <= RADIUS; dy++) {
@@ -70,14 +64,14 @@ public final class Obs {
             }
         }
 
-        // target raycast, block only no fluids, mirrors the gyms pick
+        // target raycast, block only no fluids
         double reach = player.getBlockInteractionRange();
         if (reach <= 0.0) reach = REACH;
 
         boolean aimed = false;
-        float dist = 0.0f;
-        int face = 255; // sentinel, no face
-        target = 0;
+        float    dist = 0.0f;
+        int      face = 255;  // sentinel, no face
+        target        = 0;
 
         HitResult hit = player.raycast(reach, 1.0f, false);
         if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {

@@ -14,21 +14,15 @@ import net.minecraft.util.math.MathHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Per tick agent loop, build obs, run policy, apply the action.
- *
- * Movement works by replacing the player input object with ours, the meteor and
- * baritone pattern, keybindings alone never move the player in 1.21. Mining goes
- * through the interaction manager so the client emits correctly timed packets.
- */
+// per tick agent loop, build obs, run policy, apply the action
 public final class Runner {
 
     private static final Logger LOG = LoggerFactory.getLogger("mcgym");
-    private static final int LOG_EVERY = 10;
+    private static final int    LOG_EVERY = 10;
 
-    private final Policy policy;
-    private final Obs obs;
-    private final Input input = new Input();
+    private final Policy   policy;
+    private final Obs      obs;
+    private final Input    input = new Input();
     private final Registry registry;
 
     // restored on stop, non null only while our input is installed
@@ -63,7 +57,6 @@ public final class Runner {
     }
 
     private void look(ClientPlayerEntity player, Actions act) {
-        // exactly the policys look delta, no assist
         player.setYaw(MathHelper.wrapDegrees(player.getYaw() + act.yaw));
         player.setPitch(MathHelper.clamp(player.getPitch() + act.pitch, -90.0f, 90.0f));
     }
@@ -87,7 +80,6 @@ public final class Runner {
         }
 
         // attackBlock starts the dig, updateBlockBreakingProgress advances it,
-        // both emit proper packets with vanilla timing
         if (!im.isBreakingBlock()) im.attackBlock(bhr.getBlockPos(), bhr.getSide());
         else im.updateBlockBreakingProgress(bhr.getBlockPos(), bhr.getSide());
         mc.player.swingHand(mc.player.getActiveHand());
@@ -120,7 +112,6 @@ public final class Runner {
             act.forward, act.strafe, act.jump, act.sprint, act.yaw, act.pitch, act.attack);
     }
 
-    /** Restore the players input and abort any mining. */
     public void release(MinecraftClient mc) {
         input.clear();
         if (mc.player != null && prev != null) mc.player.input = prev;
