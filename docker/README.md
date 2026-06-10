@@ -5,7 +5,7 @@ host, fill `.env` from `.env.example`, `docker compose up -d`.
 
 What happens on every up
 
-1. `mcai-init` (busybox, exits right away) writes the ssh authorized_keys and
+1. `mcgym-init` (busybox, exits right away) writes the ssh authorized_keys and
    two supervisord program configs into the data dir
 2. `xgl` (the selkies desktop image) starts, supervisord picks up the programs,
    both backed by the single `bootstrap.sh`
@@ -34,7 +34,7 @@ tools/      rustup + cargo + venv + pip cache
 mcai/       repo clone, re cloned on boot, keep no state here
 runs/       checkpoints per task, the valuable part
 xgl-ssh/    dropbear host key + cached debs
-mcai-init/  files written by the init service
+mcgym-init/  files written by the init service
 train.log   training output
 ```
 
@@ -50,4 +50,4 @@ train.log   training output
   agents and the 32 gyms want a core each, raise `MEM_LIMIT` and `CPUS` if the
   host has headroom
 - knob changes, edit `.env`, `docker compose up -d`, then
-  `docker exec xgl supervisorctl restart mcai-train`
+  `docker exec xgl supervisorctl restart mcgym-train`
