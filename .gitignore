@@ -21,3 +21,6 @@ wandb/
 
 # Schema generated code
 schema/codegen/_generated/
+
+# Rust build artifacts
+target/

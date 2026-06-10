@@ -24,9 +24,13 @@ _COLORS_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "block_c
 
 
 class TrainMonitor:
-    def __init__(self, port: int, registry, n_agents: int, poll_dt: float = 0.4):
+    def __init__(self, port: int, registry, n_agents: int, poll_dt: float = 0.2,
+                 preview_cap: int = 24):
         self.port = port
         self.n_agents = n_agents
+        # Each previewed agent ships a full 4913-int voxel grid; serialising all of them (e.g.
+        # 1000+) every snapshot is huge and stalls the browser. Cap to a representative sample.
+        self._preview_cap = preview_cap
         self._poll_dt = poll_dt
         self._log_ids = log_item_ids(registry)
         raw = json.loads(_COLORS_PATH.read_text())
@@ -39,10 +43,13 @@ class TrainMonitor:
         self._server = None
 
     def start(self) -> str:
-        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), self._make_handler())
+        # Bind all interfaces so the monitor is reachable from outside the box (e.g. the
+        # GPU box's public IP). It is an unauthenticated read-only view; expose only on a
+        # trusted/reserved port.
+        self._server = ThreadingHTTPServer(("0.0.0.0", self.port), self._make_handler())
         self.port = self._server.server_address[1]
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
-        return f"http://127.0.0.1:{self.port}/"
+        return f"http://0.0.0.0:{self.port}/"
 
     def update(self, obs_struct: np.ndarray, action_idx: np.ndarray, reward: np.ndarray, step: int) -> None:
         now = time.monotonic()
@@ -50,7 +57,8 @@ class TrainMonitor:
             return
         self._last_snap = now
         agents = []
-        for i in range(min(self.n_agents, len(obs_struct))):
+        n_show = min(self.n_agents, len(obs_struct), self._preview_cap)
+        for i in range(n_show):
             o = obs_struct[i]
             agents.append({
                 "id": int(o["agent_id"]),
@@ -65,7 +73,12 @@ class TrainMonitor:
                 "act": self._act_str(action_idx[i]),
                 "look_log": int(o["target_in_range"]) == 1,
             })
-        self._snapshot = {"step": int(step), "edge": spec.VOXEL_EDGE, "agents": agents}
+        self._snapshot = {
+            "step": int(step),
+            "edge": spec.VOXEL_EDGE,
+            "agents": agents,
+            "total": int(self.n_agents),
+        }
 
     @staticmethod
     def _act_str(a: np.ndarray) -> str:

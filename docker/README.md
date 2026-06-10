@@ -8,6 +8,24 @@ Packages the full stack so it runs anywhere with an NVIDIA GPU:
 The decompiled+patched server sources are baked in; the image only compiles the gym, it does
 **not** re-run the heavy decompile. The Python venv is rebuilt fresh with pinned torch-cu121.
 
+## Getting the code to the box (important — you can't `git clone` it)
+
+There is **no single git clone that builds**:
+- `minecraft-decomp` is a *separate* repo (`github.com/SolsticeSpectrum/minecraft-decomp`) and the
+  umbrella `mcai` repo **gitignores it** — so it's not on the `mcai` GitHub at all.
+- Even `minecraft-decomp` itself only tracks the *patches*; its compilable `server/src` is
+  **generated** by `./gradlew setup` (decompile + patch) and is gitignored.
+
+So ship the working tree instead. From your machine:
+```bash
+./docker/pack.sh                      # -> mcai-context.tar.gz (~150 MB, has the generated sources)
+scp -P <port> mcai-context.tar.gz root@<box>:/root/
+# on the box:
+mkdir mcai && tar -xzf mcai-context.tar.gz -C mcai && cd mcai
+docker build -f docker/Dockerfile -t mcai-train .
+```
+Alternatives: build the image locally and ship the image (`docker save mcai-train | gzip` → `docker load`, ~8 GB), or push it to a registry (ghcr.io). Or build from source on the box by cloning `minecraft-decomp` and running `./gradlew setup` first (heavier — downloads + decompiles Mojang).
+
 ## Host prerequisites (Ricman)
 - NVIDIA driver (recent enough for CUDA 12.1) + **nvidia-container-toolkit** installed.
   Verify: `docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi`

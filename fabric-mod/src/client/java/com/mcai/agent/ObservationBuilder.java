@@ -25,10 +25,12 @@ public final class ObservationBuilder {
     public static final int VOXEL_RADIUS = 8;
     public static final int VOXEL_EDGE = 17;            // 2*8+1
     public static final int VOXEL_COUNT = 4913;         // 17^3
+    public static final int VOXEL_FAR_STRIDE = 4;       // far shell samples every 4th block (radius 32)
     public static final int INV_SLOTS = 41;             // 36 main + 4 armor + 1 offhand
     public static final double DEFAULT_BLOCK_REACH = 4.5;
 
     public final long[] voxel = new long[VOXEL_COUNT];
+    public final long[] voxelFar = new long[VOXEL_COUNT];
     public final float[] scalars = new float[OnnxPolicy.SCALARS];
     public final long[] invItemId = new long[INV_SLOTS];
     public final float[] invCount = new float[INV_SLOTS];
@@ -62,6 +64,24 @@ public final class ObservationBuilder {
                     cursor.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
                     Block block = world.getBlockState(cursor).getBlock();
                     voxel[index] = registry.blockId(Registries.BLOCK.getId(block).toString());
+                }
+            }
+        }
+
+        // --- 1b. Far voxel shell (int64[4913]) -----------------------------
+        // Same 17^3 grid sampled at stride VOXEL_FAR_STRIDE (radius 8*4 = 32), the
+        // foveated render-distance field (matches McaiGymRuntime.fillVoxels far shell).
+        // Unloaded chunks beyond render distance return air client-side, exactly as
+        // the gym's getChunkNow path does — so no special handling is needed.
+        for (int dy = -VOXEL_RADIUS; dy <= VOXEL_RADIUS; dy++) {
+            for (int dz = -VOXEL_RADIUS; dz <= VOXEL_RADIUS; dz++) {
+                for (int dx = -VOXEL_RADIUS; dx <= VOXEL_RADIUS; dx++) {
+                    int index = ((dy + VOXEL_RADIUS) * VOXEL_EDGE + (dz + VOXEL_RADIUS)) * VOXEL_EDGE + (dx + VOXEL_RADIUS);
+                    cursor.set(center.getX() + dx * VOXEL_FAR_STRIDE,
+                               center.getY() + dy * VOXEL_FAR_STRIDE,
+                               center.getZ() + dz * VOXEL_FAR_STRIDE);
+                    Block block = world.getBlockState(cursor).getBlock();
+                    voxelFar[index] = registry.blockId(Registries.BLOCK.getId(block).toString());
                 }
             }
         }
