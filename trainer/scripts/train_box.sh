@@ -41,6 +41,7 @@ exec .venv/bin/python -m mcai_train.train \
   --device cuda \
   --arena wild \
   ${ASYNC:+--async-collect} \
+  ${COHORTS:+--async-cohorts "$COHORTS"} \
   ${PIPELINE:+--pipeline} \
   --run-name "$RUN" \
   --checkpoint-dir "runs/$RUN" \

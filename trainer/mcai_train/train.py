@@ -64,10 +64,15 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument(
         "--async-collect",
         action="store_true",
-        help="2-cohort pipelined collection: split gyms into cohorts A/B and overlap A's gym "
-        "ticks (CPU/cores) with B's policy forward (GPU) and vice versa, so neither waits. "
+        help="K-cohort pipelined collection: split gyms into cohorts stepped offset so each "
+        "cohort's gym ticks (CPU/cores) overlap the other cohorts' policy forwards (GPU). "
         "Combined with the background-thread update, keeps both the cores and the GPU busy. "
-        "Requires --num-envs >= 2 (even split). Bounded 1-rollout policy staleness.",
+        "Requires --num-envs >= cohorts. Bounded 1-rollout policy staleness.",
+    )
+    p.add_argument(
+        "--async-cohorts", type=int, default=2,
+        help="number of collect cohorts for --async-collect; raise it when the gym tick is "
+        "slower than one cohort's policy forward (each gym gets K-1 forwards of tick time)",
     )
     p.add_argument("--curriculum", default="", help="gym curriculum, e.g. 'tree_ahead'")
     p.add_argument("--arena", default="", help="gym arena mode, e.g. 'flat'")
@@ -114,23 +119,23 @@ def train(args: argparse.Namespace) -> None:
             cumulative_timesteps = int(meta["cumulative_timesteps"])
             print(f"[train] resumed at {cumulative_timesteps} timesteps")
 
-    # --async-collect splits the gyms into two cohorts (A/B) that step offset so one's gym ticks
-    # overlap the other's policy forward. Otherwise a single (vec-)env stepped in lockstep.
+    # --async-collect splits the gyms into K cohorts stepped offset: while one cohort's gyms
+    # tick, the other K-1 cohorts' policy forwards run on the GPU. More cohorts buy each gym
+    # more tick time before its recv (the gym tick is slower than one cohort's forward).
     env = None
     cohorts = None
     if args.async_collect:
-        if args.num_envs < 2:
-            raise SystemExit("--async-collect requires --num-envs >= 2")
-        ka = args.num_envs // 2
-        kb = args.num_envs - ka
-        envA = ParallelVecEnv(ka, args.n_agents, args.seed, registry,
-                              episode_len=args.episode_len, curriculum=args.curriculum,
-                              arena=args.arena)
-        envB = ParallelVecEnv(kb, args.n_agents, args.seed + 10_000, registry,
-                              episode_len=args.episode_len, curriculum=args.curriculum,
-                              arena=args.arena)
-        cohorts = [envA, envB]
-        n = envA.n_agents + envB.n_agents
+        k = max(2, args.async_cohorts)
+        if args.num_envs < k:
+            raise SystemExit(f"--async-collect requires --num-envs >= {k} (cohorts)")
+        sizes = [args.num_envs // k + (1 if i < args.num_envs % k else 0) for i in range(k)]
+        cohorts = [
+            ParallelVecEnv(sz, args.n_agents, args.seed + 10_000 * i, registry,
+                           episode_len=args.episode_len, curriculum=args.curriculum,
+                           arena=args.arena)
+            for i, sz in enumerate(sizes)
+        ]
+        n = sum(c.n_agents for c in cohorts)
     elif args.num_envs > 1:
         env = ParallelVecEnv(args.num_envs, args.n_agents, args.seed, registry,
                              episode_len=args.episode_len, curriculum=args.curriculum,
@@ -230,13 +235,13 @@ def train(args: argparse.Namespace) -> None:
         return float(env.wood_held(obs_batch).mean())
 
     def run_async():
-        # Two cohorts step offset: while A's gyms tick (CPU/cores), B's policy forward runs (GPU),
-        # then vice versa — neither waits on the other. The PPO update runs on a background thread
-        # (overlapping the next collect). Bounded 1-rollout policy staleness.
-        envA, envB = cohorts
+        # K cohorts step offset: each cohort's gym tick (CPU/cores) overlaps the other K-1
+        # cohorts' policy forwards (GPU), so by the time a cohort is recv'd its tick is mostly
+        # done. The PPO update runs on a background thread (overlapping the next collect).
+        # Bounded 1-rollout policy staleness regardless of K.
         bufs = [RolloutBuffer(args.rollout_len, n), RolloutBuffer(args.rollout_len, n)]
         inf = [copy.deepcopy(model).eval()]
-        obsA, obsB = envA.reset(), envB.reset()
+        obs = [c.reset() for c in cohorts]
         epr = np.zeros(n, dtype=np.float64)
         result: dict = {}
 
@@ -278,44 +283,43 @@ def train(args: argparse.Namespace) -> None:
         prof_on = bool(os.environ.get("MCAI_PROFILE"))
 
         def collect(buf):
-            nonlocal obsA, obsB, epr
+            nonlocal obs, epr
             buf.reset()
             completed = []
             m = inf[0]
-            pf = ps = pr = pp = 0.0
+            pf = pr = pp = 0.0
             for _ in range(args.rollout_len):
                 t = time.perf_counter()
-                aA, lpA, vA = fwd(m, obsA)
-                envA.step_send(aA)              # A's gyms tick (CPU) ...
-                aB, lpB, vB = fwd(m, obsB)      # ... while B's forward runs (GPU)
-                envB.step_send(aB)
+                acts, lps, vals = [], [], []
+                for ci, c in enumerate(cohorts):
+                    a, lp, v = fwd(m, obs[ci])   # cohort ci's forward (GPU) ...
+                    c.step_send(a)               # ... then its gyms tick while the rest forward
+                    acts.append(a); lps.append(lp); vals.append(v)
                 pf += time.perf_counter() - t; t = time.perf_counter()
-                oA, rA, dA = envA.step_recv()
-                oB, rB, dB = envB.step_recv()
+                res = [c.step_recv() for c in cohorts]
                 pr += time.perf_counter() - t; t = time.perf_counter()
                 # Concatenate each field once and reuse (was concatenating obs+act twice/step).
-                obs_cat = np.concatenate([obsA, obsB])
-                act_cat = np.concatenate([aA, aB])
-                rew = np.concatenate([rA, rB])
-                buf.add(obs_cat, act_cat, np.concatenate([lpA, lpB]), rew,
-                        np.concatenate([vA, vB]), np.concatenate([dA, dB]))
+                obs_cat = np.concatenate(obs)
+                act_cat = np.concatenate(acts)
+                rew = np.concatenate([r[1] for r in res])
+                buf.add(obs_cat, act_cat, np.concatenate(lps), rew,
+                        np.concatenate(vals), np.concatenate([r[2] for r in res]))
                 epr += rew
-                if dA.all() and dB.all():
+                if all(r[2].all() for r in res):
                     completed.extend(epr.tolist())
                     epr = np.zeros(n, dtype=np.float64)
-                obsA, obsB = oA, oB
+                obs = [r[0] for r in res]
                 if monitor is not None:
                     monitor.update(obs_cat, act_cat, rew, cumulative_timesteps)
                 pp += time.perf_counter() - t
-            _, _, lvA = fwd(m, obsA)
-            _, _, lvB = fwd(m, obsB)
-            buf.compute_gae(np.concatenate([lvA, lvB]))
+            buf.compute_gae(np.concatenate([fwd(m, o)[2] for o in obs]))
             if prof_on:
                 print(f"[profile] fwd+send={pf:.1f}s recv={pr:.1f}s post={pp:.1f}s", flush=True)
             return completed
 
         def wood_mean():
-            return float(np.concatenate([envA.wood_held(obsA), envB.wood_held(obsB)]).mean())
+            return float(np.concatenate(
+                [c.wood_held(o) for c, o in zip(cohorts, obs)]).mean())
 
         cur = 0
         completed_prev = collect(bufs[cur])  # prime (also compiles the collect forward, serially)
