@@ -1,4 +1,4 @@
-package com.mcai.policy;
+package com.mcgym.policy;
 
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;

@@ -66,7 +66,7 @@ export default function App() {
 
   const Header = (
     <div style={{ height: 44, padding: '0 16px', borderBottom: '1px solid #1e2230', display: 'flex', gap: 18, alignItems: 'center' }}>
-      <b>MCAI</b>
+      <b>MCGym</b>
       <span style={{ color: '#9aa4bf' }}>step {state.step.toLocaleString()}</span>
       <span style={{ color: '#9aa4bf' }}>{envs.length} envs · {state.x.length} agents</span>
       {(selEnv != null || selAgent) && (
