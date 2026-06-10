@@ -141,7 +141,7 @@ def train(args: argparse.Namespace) -> None:
     monitor = None
     if args.monitor_port:
         from .monitor import TrainMonitor
-        monitor = TrainMonitor(args.monitor_port, registry, n)
+        monitor = TrainMonitor(args.monitor_port, registry, n, n_per=args.n_agents)
         print(f"[train] web monitor at {monitor.start()}")
 
     hyperparams = {
