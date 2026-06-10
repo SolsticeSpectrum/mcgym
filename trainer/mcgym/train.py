@@ -1,4 +1,4 @@
-"""PPO training entrypoint, pick a task with --task."""
+"""ppo training entrypoint, pick a task with --task"""
 from __future__ import annotations
 
 import argparse
@@ -55,6 +55,7 @@ def parse(argv=None) -> argparse.Namespace:
     p.add_argument("--cohorts", type=int, default=0,
                    help="K cohort async collect, gym ticks overlap other cohorts forwards, needs num-envs >= K")
     p.add_argument("--monitor", type=int, default=0, help="web monitor port")
+    
     return p.parse_args(argv)
 
 
@@ -66,9 +67,10 @@ def device_of(arg: str) -> str:
 
 def train(args: argparse.Namespace) -> None:
     device = device_of(args.device)
+    ckpt_dir = args.ckpt_dir or f"runs/{args.run}"
+
     # tf32 for fp32 matmuls, fine for policy nets
     torch.set_float32_matmul_precision("high")
-    ckpt_dir = args.ckpt_dir or f"runs/{args.run}"
 
     registry = Registry.load(REGISTRY)
     blocks, items = sizes(REGISTRY)
@@ -95,6 +97,7 @@ def train(args: argparse.Namespace) -> None:
         k = args.cohorts
         if args.num_envs < k:
             raise SystemExit(f"--cohorts {k} needs --num-envs >= {k}")
+        
         per = [args.num_envs // k + (1 if i < args.num_envs % k else 0) for i in range(k)]
         cohorts = [VecEnv(sz, args.agents, args.seed + 10_000 * i, task) for i, sz in enumerate(per)]
         n = sum(c.agents for c in cohorts)
@@ -105,15 +108,19 @@ def train(args: argparse.Namespace) -> None:
             for c in cohorts:
                 out.append(c.metric(obs[off:off + c.agents]))
                 off += c.agents
+                
             return np.concatenate(out)
     elif args.num_envs > 1:
         env = VecEnv(args.num_envs, args.agents, args.seed, task)
         n = env.agents
+        
         metric = env.metric
     else:
         env = Env(args.agents, args.seed, task(args.agents))
         n = env.agents
+        
         metric = env.metric
+        
     buf = Buffer(args.rollout, n)
 
     monitor = None
@@ -124,42 +131,49 @@ def train(args: argparse.Namespace) -> None:
 
     def meta() -> dict:
         return {
-            "steps": steps,
-            "task": args.task,
+            "steps":          steps,
+            "task":           args.task,
             "schema_version": spec.SCHEMA_VERSION,
-            "hyperparams": {"lr": args.lr, "rollout": args.rollout, "agents": args.agents,
-                            "minibatch": args.minibatch, "epochs": args.epochs, "scale": args.scale},
-            "blocks": blocks,
-            "items": items,
+            "hyperparams":    {"lr": args.lr, "rollout": args.rollout, "agents": args.agents,
+                               "minibatch": args.minibatch, "epochs": args.epochs, "scale": args.scale},
+            "blocks":         blocks,
+            "items":          items,
         }
 
     obs = env.reset() if env is not None else None
     epr = np.zeros(n, dtype=np.float64)
+    
     # episodes span rollouts so carry the mean episode return as an ema
-    ema = None
+    ema       = None
     last_ckpt = steps
-    start = time.monotonic()
+    start     = time.monotonic()
 
     def rollout(cmodel, buf):
         # one rollout into buf, returns episode returns that completed
         nonlocal obs, epr
         buf.reset()
+        
         completed = []
         for _ in range(args.rollout):
             with torch.no_grad():
                 a, lp, v = cmodel.get_action(tensors(obs, device))
             a = a.cpu().numpy()
+
             nxt, rew, done = env.step(a)
             buf.add(obs, a, lp.cpu().numpy(), rew, v.cpu().numpy(), done)
+
             epr += rew
             if done.all():
                 completed.extend(epr.tolist())
                 epr = np.zeros(n, dtype=np.float64)
+
             obs = nxt
             if monitor is not None:
                 monitor.update(nxt, a, rew, steps)
+
         with torch.no_grad():
             last = cmodel.get_action(tensors(obs, device))[2]
+            
         buf.gae(last.cpu().numpy())
         return completed
 
@@ -167,14 +181,18 @@ def train(args: argparse.Namespace) -> None:
         nonlocal ema, steps, last_ckpt
         steps += args.rollout * n
         sps = (args.rollout * n) / max(secs, 1e-6)
+
         if completed:
             mean = float(np.mean(completed))
             ema = mean if ema is None else EMA * ema + (1.0 - EMA) * mean
+            
         epm = ema if ema is not None else fallback
+
         print(f"[train] t={steps} ep_rew={epm:.3f} score={score:.2f} "
               f"pi={metrics['policy_loss']:.4f} v={metrics['value_loss']:.4f} "
               f"ent={metrics['entropy']:.3f} clip={metrics['clip_frac']:.3f} "
               f"sps={sps:.0f} collect={secs:.1f}s")
+        
         if steps - last_ckpt >= args.ckpt_every:
             checkpoint.save(ckpt_dir, model, learner.optimizer, meta())
             last_ckpt = steps
@@ -185,9 +203,9 @@ def train(args: argparse.Namespace) -> None:
         # cohorts forwards on the gpu, update runs on a background thread,
         # bounded one rollout staleness
         nonlocal epr
-        bufs = [Buffer(args.rollout, n), Buffer(args.rollout, n)]
-        inf = copy.deepcopy(model).eval()
-        cobs = [c.reset() for c in cohorts]
+        bufs   = [Buffer(args.rollout, n), Buffer(args.rollout, n)]
+        inf    = copy.deepcopy(model).eval()
+        cobs   = [c.reset() for c in cohorts]
         result: dict = {}
 
         def update(b):
@@ -201,6 +219,7 @@ def train(args: argparse.Namespace) -> None:
         get = inf.get_action
         if stream is not None and os.environ.get("MCGYM_COMPILE"):
             get = torch.compile(inf.get_action)
+            
         # collect in the same precision as the updates recompute, a mismatch
         # shows up as ratio noise and inflates clip_frac
         bf16 = stream is not None and bool(os.environ.get("MCGYM_BF16"))
@@ -228,23 +247,32 @@ def train(args: argparse.Namespace) -> None:
                 for ci, c in enumerate(cohorts):
                     a, lp, v = fwd(cobs[ci])  # this cohorts forward
                     c.send(a)                 # its gyms tick while the rest forward
-                    acts.append(a); lps.append(lp); vals.append(v)
-                pf += time.perf_counter() - t; t = time.perf_counter()
+                    acts.append(a); lps.append(lp);
+                    vals.append(v)
+                    
+                pf += time.perf_counter() - t;
+                t = time.perf_counter()
+
                 res = [c.recv() for c in cohorts]
-                pr += time.perf_counter() - t; t = time.perf_counter()
+                pr += time.perf_counter() - t; 
+                t = time.perf_counter()
+
                 ocat = np.concatenate(cobs)
                 acat = np.concatenate(acts)
-                rew = np.concatenate([r[1] for r in res])
+                rew  = np.concatenate([r[1] for r in res])
                 buf.add(ocat, acat, np.concatenate(lps), rew,
                         np.concatenate(vals), np.concatenate([r[2] for r in res]))
+
                 epr += rew
                 if all(r[2].all() for r in res):
                     completed.extend(epr.tolist())
                     epr = np.zeros(n, dtype=np.float64)
+
                 cobs = [r[0] for r in res]
                 if monitor is not None:
                     monitor.update(ocat, acat, rew, steps)
                 pp += time.perf_counter() - t
+
             buf.gae(np.concatenate([fwd(o)[2] for o in cobs]))
             if prof:
                 print(f"[profile] fwd+send={pf:.1f}s recv={pr:.1f}s post={pp:.1f}s", flush=True)
@@ -265,14 +293,16 @@ def train(args: argparse.Namespace) -> None:
                 # compiled function, let the first update compile alone
                 th.join()
                 first = False
+                
             nxt = 1 - cur
             completed = collect(bufs[nxt])
             th.join()
+            
             # sync collect weights, safe between rollouts
             inf.load_state_dict(model.state_dict())
             log(result["m"], prev, time.monotonic() - t0, score(), float(epr.mean()))
             prev = completed
-            cur = nxt
+            cur  = nxt
 
     try:
         if cohorts is not None:
@@ -281,7 +311,7 @@ def train(args: argparse.Namespace) -> None:
             # snapshot policy collects while the live model trains on a thread
             snap = copy.deepcopy(model).eval()
             bufs = [buf, Buffer(args.rollout, n)]
-            cur = 0
+            cur  = 0
             prev = rollout(model, bufs[cur])
             result: dict = {}
 
@@ -289,13 +319,14 @@ def train(args: argparse.Namespace) -> None:
                 result["m"] = learner.update(b)
 
             while steps < args.total:
-                t0 = time.monotonic()
+                t0  = time.monotonic()
                 snap.load_state_dict(model.state_dict())
-                th = threading.Thread(target=update, args=(bufs[cur],), daemon=True)
+                th  = threading.Thread(target=update, args=(bufs[cur],), daemon=True)
                 th.start()
                 nxt = 1 - cur
                 completed = rollout(snap, bufs[nxt])
                 th.join()
+                
                 log(result["m"], prev, time.monotonic() - t0, float(metric(obs).mean()), float(epr.mean()))
                 prev = completed
                 cur = nxt
@@ -303,6 +334,7 @@ def train(args: argparse.Namespace) -> None:
             while steps < args.total:
                 t0 = time.monotonic()
                 completed = rollout(model, buf)
+                
                 metrics = learner.update(buf)
                 log(metrics, completed, time.monotonic() - t0, float(metric(obs).mean()), float(epr.mean()))
     except KeyboardInterrupt:
@@ -311,6 +343,7 @@ def train(args: argparse.Namespace) -> None:
         checkpoint.save(ckpt_dir, model, learner.optimizer, meta())
         for c in cohorts or []:
             c.close()
+            
         if env is not None:
             env.close()
         print(f"[train] done, {steps} steps in {time.monotonic() - start:.1f}s")

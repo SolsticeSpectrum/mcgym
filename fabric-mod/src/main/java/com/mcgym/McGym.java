@@ -22,8 +22,8 @@ public final class McGym implements ClientModInitializer {
     public static final String PREFIX = ".";
 
     private Registry registry;
-    private Runner runner;
-    private String loaded;
+    private Runner   runner;
+    private String   loaded;
 
     @Override
     public void onInitializeClient() {
@@ -33,6 +33,7 @@ public final class McGym implements ClientModInitializer {
                 handle(message.substring(PREFIX.length()).trim());
                 return false;
             }
+
             return true;
         });
 
@@ -45,6 +46,7 @@ public final class McGym implements ClientModInitializer {
     private static Path home() {
         String home = System.getenv("MCGYM_HOME");
         if (home == null) throw new IllegalStateException("MCGYM_HOME not set, point it at the mcgym repo");
+
         return Path.of(home);
     }
 
@@ -69,6 +71,7 @@ public final class McGym implements ClientModInitializer {
                     feedback(mc, "usage: .run <name>");
                     return;
                 }
+
                 run(mc, parts[1]);
             }
             case "stop" -> stop(mc, "stopped");
@@ -84,13 +87,16 @@ public final class McGym implements ClientModInitializer {
                 registry = Registry.load(home.resolve("schema/registry.json"));
                 LOG.info("registry loaded, {} blocks {} items", registry.blocks(), registry.items());
             }
+
             if (runner != null) {
                 runner.release(mc);
                 runner.close();
                 runner = null;
             }
+
             Path onnx = home.resolve("weights").resolve(name + ".onnx");
             runner = new Runner(new Policy(onnx), registry);
+
             loaded = name;
             feedback(mc, "running policy: " + name);
         } catch (Exception e) {
@@ -106,6 +112,7 @@ public final class McGym implements ClientModInitializer {
             runner = null;
             loaded = null;
         }
+
         feedback(mc, why);
     }
 
