@@ -1,18 +1,8 @@
-# MCAI GPU training box — Selkies desktop + SSH + auto-started wood task.
-#
-# Usage: copy this folder (docker-compose.yml, bootstrap.sh, .env) to the host
-# and `docker compose up -d`. Everything else is automatic:
-#   - mcgym-init (busybox, one-shot) writes the supervisord program configs and
-#     the SSH authorized_keys into the persistent data dir on every `up`
-#   - xgl starts; its supervisord picks up two extra programs, both backed by
-#     the single bootstrap.sh: `ssh` (dropbear on :2222) and `train`
-#     (rust/python/torch toolchain into /drive2/tools, git clone of the repo,
-#     cargo build, then the supervised wood task with the monitor on :9080)
-#
-# The container is disposable. Everything that must survive a recreate lives in
-# ${DATA_DIR} (mounted as /drive2): toolchains, the repo clone, checkpoints,
-# the dropbear host key.
+# fresh gpu host to running training, see README.md, everything that must
+# survive a recreate lives in DATA_DIR (mounted as /drive2)
 services:
+  # one shot, writes the ssh keys and the two supervisord programs that xgl
+  # picks up, both backed by bootstrap.sh
   mcgym-init:
     container_name: mcgym-init
     image: busybox
@@ -24,12 +14,10 @@ services:
     - -c
     - |
       set -e
-      # authorized_keys from .env (multiple keys separated by ';')
       echo '${SSH_PUBLIC_KEYS:?set SSH_PUBLIC_KEYS in docker/.env}' | tr ';' '\n' > /opt/init/authorized_keys
-      # supervisord programs — both run the one bootstrap script in different modes
       cat > /opt/init/mcgym-ssh.conf <<'EOF'
       [program:mcgym-ssh]
-      command=/bin/bash /opt/mcai/bootstrap.sh ssh
+      command=/bin/bash /opt/mcgym/bootstrap.sh ssh
       directory=/home/ubuntu
       autostart=true
       autorestart=true
@@ -39,7 +27,7 @@ services:
       EOF
       cat > /opt/init/mcgym-train.conf <<'EOF'
       [program:mcgym-train]
-      command=/bin/bash /opt/mcai/bootstrap.sh train
+      command=/bin/bash /opt/mcgym/bootstrap.sh train
       directory=/home/ubuntu
       autostart=true
       autorestart=true
@@ -51,7 +39,7 @@ services:
       EOF
       chmod 600 /opt/init/authorized_keys
       chown -R 1000:1000 /opt/init
-      echo 'mcgym-init: done'
+      echo 'mcgym-init done'
 
   xgl:
     container_name: xgl
@@ -61,9 +49,9 @@ services:
         condition: service_completed_successfully
     image: ghcr.io/selkies-project/nvidia-glx-desktop:latest
     runtime: nvidia
-    # NOTE: with `network_mode: host`, this ports section is IGNORED — services
-    # listen directly on the host: selkies :8080, training monitor :9080,
-    # dropbear SSH :2222 (port 22 on the host IP is the host VM's own sshd).
+    # host networking makes this ports section decorative, selkies 8080,
+    # monitor 9080 and dropbear 2222 bind on the host directly, port 22 on
+    # the host ip is the host vm not the container
     ports:
     - '8080:8080'
     - '9080:9080'
@@ -83,9 +71,7 @@ services:
     - '/dev/shm:rw'
     volumes:
     - '${DATA_DIR:-/data/Docker/data}:/drive2'
-    - './bootstrap.sh:/opt/mcai/bootstrap.sh:ro'
-    # files written by mcgym-init above
-    - '${DATA_DIR:-/data/Docker/data}/mcgym-init:/opt/mcgym-init:ro'
+    - './bootstrap.sh:/opt/mcgym/bootstrap.sh:ro'
     - '${DATA_DIR:-/data/Docker/data}/mcgym-init/mcgym-ssh.conf:/etc/supervisor/conf.d/mcgym-ssh.conf:ro'
     - '${DATA_DIR:-/data/Docker/data}/mcgym-init/mcgym-train.conf:/etc/supervisor/conf.d/mcgym-train.conf:ro'
     network_mode: 'host'
@@ -97,7 +83,7 @@ services:
     - DISPLAY_DPI=96
     - DISPLAY_CDEPTH=24
     - VIDEO_PORT=DFP
-    # Container user password (also the `sudo-root` password inside)
+    # container user password, also sudo-root inside
     - PASSWD=${PASSWD:?set PASSWD in docker/.env}
     - SELKIES_ENCODER=nvh264enc
     - SELKIES_ENABLE_RESIZE=false
