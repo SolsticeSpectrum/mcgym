@@ -1,70 +1,47 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { createVoxelScene, lookDir } from './voxelScene.js'
+import { createVoxelScene } from './voxelScene.js'
+import { drawAgentMini } from './miniRender.js'
 
-const EYE = 1.62
+const POVW = 168
+const VH = 110
 
-// Full agent view: a mouse-orbit 3D scene plus a POV camera (from the agent's eyes) and a
-// top-down camera, all of one shared scene rendered into three viewports of a single canvas.
+// Full agent view: fullscreen mouse-orbit 3D (own scene, Steve visible, optional transparency)
+// plus a small minimap card (POV + top-down) in the top-right, rendered by the shared
+// mini-renderer (always opaque, Steve hidden in POV, arrow in top-down).
 export default function AgentView({ env, i, palette }) {
   const wrap = useRef(null)
+  const povRef = useRef(null)
+  const topRef = useRef(null)
   const api = useRef(null)
   const [info, setInfo] = useState(null)
   const [transparent, setTransparent] = useState(false)
 
   useEffect(() => {
     const mount = wrap.current
-    const W = () => mount.clientWidth
-    const H = () => mount.clientHeight
     const { scene, update, setTransparent: setT } = createVoxelScene()
-
-    const orbitCam = new THREE.PerspectiveCamera(50, 2, 0.1, 500)
-    orbitCam.position.set(20, 16, 20)
-    const povCam = new THREE.PerspectiveCamera(75, 1, 0.05, 500)
-    const topCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 500)
-    topCam.position.set(0, 30, 0)
-    topCam.up.set(0, 0, -1)
-    topCam.lookAt(0, 0, 0)
-
+    const cam = new THREE.PerspectiveCamera(50, 2, 0.1, 500)
+    cam.position.set(22, 17, 22)
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.setScissorTest(true)
     mount.appendChild(renderer.domElement)
-    const controls = new OrbitControls(orbitCam, renderer.domElement)
+    const controls = new OrbitControls(cam, renderer.domElement)
     controls.target.set(0, 1, 0)
     controls.enableDamping = true
-
-    api.current = { update, setT, scene, povCam }
+    api.current = { update, setT }
 
     const resize = () => {
-      renderer.setSize(W(), H())
+      const w = mount.clientWidth, h = mount.clientHeight
+      renderer.setSize(w, h)
+      cam.aspect = w / h
+      cam.updateProjectionMatrix()
     }
     resize()
     window.addEventListener('resize', resize)
-
     let raf
-    const render = () => {
-      controls.update()
-      const w = W(), h = H()
-      const mw = Math.floor(w * 0.66)
-      const sw = w - mw
-      const sh = Math.floor(h / 2)
-      // main orbit (left)
-      orbitCam.aspect = mw / h; orbitCam.updateProjectionMatrix()
-      renderer.setViewport(0, 0, mw, h); renderer.setScissor(0, 0, mw, h)
-      renderer.render(scene, orbitCam)
-      // POV (top-right)
-      povCam.aspect = sw / sh; povCam.updateProjectionMatrix()
-      renderer.setViewport(mw, sh, sw, sh); renderer.setScissor(mw, sh, sw, sh)
-      renderer.render(scene, povCam)
-      // top-down (bottom-right)
-      renderer.setViewport(mw, 0, sw, sh); renderer.setScissor(mw, 0, sw, sh)
-      renderer.render(scene, topCam)
-      raf = requestAnimationFrame(render)
-    }
+    const render = () => { controls.update(); renderer.render(scene, cam); raf = requestAnimationFrame(render) }
     render()
-
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
@@ -75,9 +52,7 @@ export default function AgentView({ env, i, palette }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (api.current) api.current.setT(transparent)
-  }, [transparent])
+  useEffect(() => { if (api.current) api.current.setT(transparent) }, [transparent])
 
   useEffect(() => {
     let alive = true
@@ -85,34 +60,37 @@ export default function AgentView({ env, i, palette }) {
       fetch(`/agent?env=${env}&i=${i}`)
         .then((r) => r.json())
         .then((d) => {
-          if (!alive || !api.current) return
+          if (!alive) return
           setInfo(d)
-          api.current.update(d, palette)
-          // place the POV camera at the eyes, looking along the agent's gaze
-          const dir = lookDir(d.yaw || 0, d.pitch || 0)
-          const cam = api.current.povCam
-          cam.position.set(0, EYE, 0)
-          cam.lookAt(dir.x, EYE + dir.y, dir.z)
+          if (api.current) api.current.update(d, palette)
+          drawAgentMini(d, palette, povRef.current, topRef.current)
         })
         .catch(() => {})
     tick()
-    const id = setInterval(tick, 400)
+    const id = setInterval(tick, 350)
     return () => { alive = false; clearInterval(id) }
   }, [env, i, palette])
 
   return (
     <div style={{ position: 'relative', height: 'calc(100vh - 44px)' }}>
       <div ref={wrap} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'absolute', top: 8, left: 8, padding: '6px 10px', background: '#0d1018cc', borderRadius: 6 }}>
+      <div style={{ position: 'absolute', top: 10, left: 10, padding: '6px 10px', background: '#0d1018cc', borderRadius: 6 }}>
         env {env} · agent {i}
-        {info && <span style={{ color: '#9aa4bf' }}> — wood {info.wood} · yaw {info.yaw} · pitch {info.pitch}{info.attacking ? ' · breaking' : info.look ? ' · aimed at block' : ''}</span>}
+        {info && <span style={{ color: '#9aa4bf' }}> — wood {info.wood} · yaw {info.yaw} · pitch {info.pitch}{info.attacking ? ' · breaking' : info.look ? ' · aimed' : ''}</span>}
         <label style={{ marginLeft: 14, color: '#9aa4bf' }}>
-          <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> transparent blocks
+          <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> transparent
         </label>
       </div>
-      <div style={{ position: 'absolute', top: 8, right: 8, color: '#9aa4bf', background: '#0d1018cc', padding: '2px 8px', borderRadius: 6 }}>POV</div>
-      <div style={{ position: 'absolute', bottom: 8, right: 8, color: '#9aa4bf', background: '#0d1018cc', padding: '2px 8px', borderRadius: 6 }}>top-down</div>
-      <div style={{ position: 'absolute', bottom: 8, left: 8, color: '#6b7390', fontSize: 12 }}>drag to orbit · scroll to zoom</div>
+      <div style={{ position: 'absolute', top: 10, right: 10, background: '#0d1018cc', border: '1px solid #1e2230', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ display: 'flex' }}>
+          <canvas ref={povRef} width={POVW} height={VH} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+          <canvas ref={topRef} width={VH} height={VH} style={{ display: 'block' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px', fontSize: 11, color: '#6b7390' }}>
+          <span>POV</span><span>top-down</span>
+        </div>
+      </div>
+      <div style={{ position: 'absolute', bottom: 8, left: 10, color: '#6b7390', fontSize: 12 }}>drag to orbit · scroll to zoom</div>
     </div>
   )
 }
