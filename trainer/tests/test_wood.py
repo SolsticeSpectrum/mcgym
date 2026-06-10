@@ -1,4 +1,4 @@
-"""wood task unit tests, synthetic observations, no gym."""
+"""wood task unit tests, synthetic observations, no gym"""
 from __future__ import annotations
 
 import pathlib
@@ -49,15 +49,17 @@ def test_id_spaces_differ(registry):
     # oak_log resolves to different ints in the block vs item table
     block = registry.block_id_of("minecraft:oak_log")
     item = registry.item_id_of("minecraft:oak_log")
+    
     assert block != item
-    assert block in log_block_ids(registry)
-    assert item in log_item_ids(registry)
+    assert block     in log_block_ids(registry)
+    assert item      in log_item_ids(registry)
     assert block not in log_item_ids(registry)
-    assert item not in log_block_ids(registry)
+    assert item  not in log_block_ids(registry)
 
 
 def test_overworld_logs_covered(registry):
     items = registry.item_ids()
+    
     ids = log_item_ids(registry)
     for name in ("minecraft:oak_log", "minecraft:spruce_log", "minecraft:birch_log",
                  "minecraft:jungle_log", "minecraft:acacia_log", "minecraft:dark_oak_log",
@@ -68,12 +70,14 @@ def test_overworld_logs_covered(registry):
 
 def test_approach_positive_when_closer(registry, task):
     oak = registry.block_id_of("minecraft:oak_log")
+    
     far = obs()
     far[0]["voxel_blocks"][cell(5, 0, 0)] = oak
     task.reset(far)
 
     near = obs()
     near[0]["voxel_blocks"][cell(2, 0, 0)] = oak
+    
     r = task.reward(near, NOOP, ALIVE, ALIVE)
     assert r[0] == pytest.approx(W_APPROACH * 3.0, abs=1e-5)
 
@@ -81,6 +85,7 @@ def test_approach_positive_when_closer(registry, task):
 def test_face_and_attack_bonus(registry, task):
     oak = registry.block_id_of("minecraft:oak_log")
     o = obs()
+    
     o[0]["voxel_blocks"][cell(1, 0, 0)] = oak
     o[0]["target_block"] = oak
     o[0]["target_in_range"] = 1
@@ -91,6 +96,7 @@ def test_face_and_attack_bonus(registry, task):
 
     attack = NOOP.copy()
     attack[:, 6] = 1
+    
     r = task.reward(o, attack, ALIVE, ALIVE)
     assert r[0] == pytest.approx(W_FACE + W_ATTACK, abs=1e-5)
 
@@ -103,6 +109,7 @@ def test_wood_gain_dominates(registry, task):
     got = obs()
     got[0]["inv_item_id"][0] = oak
     got[0]["inv_count"][0] = 2
+    
     r = task.reward(got, NOOP, ALIVE, ALIVE)
     assert r[0] == pytest.approx(W_WOOD * 2 + W_ANYITEM * 2, abs=1e-4)
 
@@ -115,6 +122,7 @@ def test_non_log_item_gives_anyitem_only(registry, task):
     got = obs()
     got[0]["inv_item_id"][0] = dirt
     got[0]["inv_count"][0] = 3
+    
     r = task.reward(got, NOOP, ALIVE, ALIVE)
     assert r[0] == pytest.approx(W_ANYITEM * 3, abs=1e-4)
 
@@ -126,6 +134,7 @@ def test_death_and_respawn(registry, task):
     dead = obs()
     dead[0]["health"] = 0.0
     died = np.ones(1, dtype=bool)
+    
     r = task.reward(dead, NOOP, died, ALIVE)
     assert r[0] == -W_DEATH
 

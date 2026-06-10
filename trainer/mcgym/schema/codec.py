@@ -1,4 +1,4 @@
-"""pack/unpack obs and action records to/from canonical bytes."""
+"""pack/unpack obs and action records to/from canonical bytes"""
 import numpy as np
 
 from . import spec
@@ -8,6 +8,7 @@ def encode_obs(rec: dict) -> bytes:
     arr = np.zeros(1, dtype=spec.OBS_DTYPE)
     for key, value in rec.items():
         arr[0][key] = value
+
     return arr.tobytes()
 
 
@@ -24,6 +25,7 @@ def encode_action(rec: dict) -> bytes:
     arr = np.zeros(1, dtype=spec.ACTION_DTYPE)
     for key, value in rec.items():
         arr[0][key] = value
+
     return arr.tobytes()
 
 
@@ -36,4 +38,5 @@ def encode_action_batch(recs) -> bytes:
     for i, rec in enumerate(recs):
         for key, value in rec.items():
             arr[i][key] = value
+
     return arr.tobytes()

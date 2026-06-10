@@ -1,4 +1,4 @@
-"""real round trip against the live gym, agents walk and voxels report real blocks."""
+"""real round trip against the live gym, agents walk and voxels report real blocks"""
 from __future__ import annotations
 
 import pathlib
@@ -34,19 +34,21 @@ def _walk_forward_actions(n: int) -> np.ndarray:
         }
         for _ in range(n)
     ]
+    
     return np.frombuffer(codec.encode_action_batch(records), dtype=spec.ACTION_DTYPE).copy()
 
 
 @pytest.mark.slow
 def test_transport_round_trip():
-    agents = 2
-    seed = 0
+    agents   = 2
+    seed     = 0
     registry = Registry.load(REGISTRY)
-    air_id = registry.id_of("minecraft:air")
+    air_id   = registry.id_of("minecraft:air")
+    
     assert air_id == 0
 
-    tmpdir = tempfile.mkdtemp(prefix="mcai_sock_")
-    shm_path = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+    tmpdir    = tempfile.mkdtemp(prefix="mcai_sock_")
+    shm_path  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
     sock_path = str(pathlib.Path(tmpdir) / "gym.sock")
 
     proc = launch(agents, seed, shm_path, sock_path)
@@ -61,7 +63,8 @@ def test_transport_round_trip():
         assert obs0["agent_id"].tolist() == [0, 1]
 
         start_pos = obs0["pos"].copy()
-        actions = _walk_forward_actions(agents)
+        actions   = _walk_forward_actions(agents)
+        
         obs = obs0
         for _ in range(20):
             obs = transport.step(actions)
@@ -79,11 +82,13 @@ def test_transport_round_trip():
     finally:
         if transport is not None:
             transport.close()
+            
         proc.terminate()
         try:
             proc.wait(timeout=30)
         except Exception:
             proc.kill()
+            
         pathlib.Path(shm_path).unlink(missing_ok=True)
         pathlib.Path(sock_path).unlink(missing_ok=True)
 

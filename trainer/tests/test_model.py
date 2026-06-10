@@ -1,4 +1,4 @@
-"""model and action space unit tests, fast cpu, one cuda forward if available."""
+"""model and action space unit tests, fast cpu, one cuda forward if available"""
 from __future__ import annotations
 
 import json
@@ -24,14 +24,14 @@ def _fake_obs(n=4):
     obs = np.zeros(n, dtype=spec.OBS_DTYPE)
     for i in range(n):
         obs[i]["voxel_blocks"][:10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        obs[i]["inv_item_id"][:3] = [11, 22, 33]
-        obs[i]["inv_count"][:3] = [5, 1, 64]
-        obs[i]["health"] = 20.0
-        obs[i]["food"] = 18.0
-        obs[i]["yaw"] = 45.0 * i
-        obs[i]["target_face"] = i % 7  # 6 treated as invalid
-        obs[i]["target_distance"] = 2.5
-        obs[i]["target_in_range"] = 1
+        obs[i]["inv_item_id"] [:3 ] = [11, 22, 33]
+        obs[i]["inv_count"]   [:3 ] = [5, 1, 64]
+        obs[i]["health"]            = 20.0
+        obs[i]["food"]              = 18.0
+        obs[i]["yaw"]               = 45.0 * i
+        obs[i]["target_face"]       = i % 7  # 6 treated as invalid
+        obs[i]["target_distance"]   = 2.5
+        obs[i]["target_in_range"]   = 1
     return obs
 
 
@@ -40,16 +40,18 @@ def test_action_mapping():
     rec = actions_to_records(idx)
     assert rec.dtype == spec.ACTION_DTYPE
     assert rec.shape == (1,)
-    assert rec[0]["forward"] == 1.0    # bin 2 is 1.0
-    assert rec[0]["strafe"] == -1.0    # bin 0 is -1.0
-    assert rec[0]["jump"] == 1
-    assert rec[0]["sprint"] == 0
-    assert rec[0]["yaw_delta"] == -10.0
-    assert rec[0]["pitch_delta"] == 10.0
-    assert rec[0]["attack"] == 1
+    
+    assert rec[0]["forward"]       == 1.0    # bin 2 is 1.0
+    assert rec[0]["strafe"]        == -1.0    # bin 0 is -1.0
+    assert rec[0]["jump"]          == 1
+    assert rec[0]["sprint"]        == 0
+    assert rec[0]["yaw_delta"]     == -10.0
+    assert rec[0]["pitch_delta"]   == 10.0
+    assert rec[0]["attack"]        == 1
+    
     # fixed fields stay zero
-    assert rec[0]["sneak"] == 0
-    assert rec[0]["use"] == 0
+    assert rec[0]["sneak"]         == 0
+    assert rec[0]["use"]           == 0
     assert rec[0]["selected_slot"] == 0
 
 
@@ -60,16 +62,16 @@ def test_forward_shapes():
     t = tensors(obs, "cpu")
 
     latent = model.encoder.encode(t)
-    assert latent.shape == (4, 256)
+    assert latent.shape  == (4, 256)
 
     logits, value = model.forward(t)
-    assert logits.shape == (4, sum(BINS))
-    assert value.shape == (4,)
+    assert logits.shape  == (4, sum(BINS))
+    assert value.shape   == (4,)
 
     act, logprob, val = model.get_action(t)
-    assert act.shape == (4, 7)
+    assert act.shape     == (4, 7)
     assert logprob.shape == (4,)
-    assert val.shape == (4,)
+    assert val.shape     == (4,)
     for h, b in enumerate(BINS):
         assert (act[:, h] >= 0).all() and (act[:, h] < b).all()
 
@@ -82,6 +84,7 @@ def test_deterministic_action():
     num_blocks, num_items = _sizes()
     model = ActorCritic(num_blocks, num_items)
     t = tensors(_fake_obs(4), "cpu")
+    
     a1, _, _ = model.get_action(t, deterministic=True)
     a2, _, _ = model.get_action(t, deterministic=True)
     assert torch.equal(a1, a2)
@@ -92,6 +95,7 @@ def test_cuda_forward():
     num_blocks, num_items = _sizes()
     model = ActorCritic(num_blocks, num_items).to("cuda")
     t = tensors(_fake_obs(4), "cuda")
+    
     act, logprob, value = model.get_action(t)
     assert act.shape == (4, 7)
     assert act.device.type == "cuda"

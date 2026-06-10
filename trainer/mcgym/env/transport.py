@@ -1,4 +1,4 @@
-"""Shm + unix socket client for the gym, one byte command one byte reply."""
+"""Shm + unix socket client for the gym, one byte command one byte reply"""
 from __future__ import annotations
 
 import socket
@@ -22,7 +22,7 @@ class Transport:
 
         self._act_off = HEADER
         self._obs_off = HEADER + agents * spec.ACTION_NBYTES
-        total = self._obs_off + agents * spec.OBS_NBYTES
+        total         = self._obs_off + agents * spec.OBS_NBYTES
 
         self._mm = np.memmap(shm, dtype="u1", mode="r+", shape=(total,))
         magic, version, mapped = np.frombuffer(self._mm[:12].tobytes(), dtype="<i4")
@@ -52,13 +52,14 @@ class Transport:
 
     def _recv_exact(self, n: int) -> bytes:
         chunks = []
-        left = n
+        left   = n
         while left:
             chunk = self._sock.recv(left)
             if not chunk:
                 raise ConnectionError("gym closed the socket mid reply")
             chunks.append(chunk)
             left -= len(chunk)
+
         return b"".join(chunks)
 
     def reset(self) -> np.ndarray:

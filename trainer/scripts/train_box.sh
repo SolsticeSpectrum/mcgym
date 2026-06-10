@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."  # -> trainer/
 
 REPO="$(cd .. && pwd)"
 export MCGYM="${MCGYM:-$REPO/mcgym/target/release/mcgym}"
-export MCGYM_SPACING="${MCGYM_SPACING:-128}"   # blocks between agents within a gym
+export MCGYM_SPACING="${MCGYM_SPACING:-128}"  # blocks between agents within a gym
 export MCGYM_BF16="${MCGYM_BF16:-1}"
 export MCGYM_COMPILE="${MCGYM_COMPILE:-1}"
 export PYTHONUNBUFFERED=1

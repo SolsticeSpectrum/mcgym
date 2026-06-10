@@ -1,7 +1,7 @@
 """end to end proof of real block mining through the live gym.
 
 drives a single agent over the shm transport and asserts a real item enters the
-inventory obs (break, drop, pickup) and that target_* populates while attacking.
+inventory obs (break, drop, pickup) and that target_* populates while attacking
 """
 from __future__ import annotations
 
@@ -31,74 +31,80 @@ def _action(
     attack: int = 0,
 ) -> np.ndarray:
     rec = {
-        "forward": forward,
-        "strafe": 0.0,
-        "jump": 0,
-        "sneak": 0,
-        "sprint": 0,
-        "yaw_delta": yaw_delta,
-        "pitch_delta": pitch_delta,
-        "attack": attack,
-        "use": 0,
+        "forward":       forward,
+        "strafe":        0.0,
+        "jump":          0,
+        "sneak":         0,
+        "sprint":        0,
+        "yaw_delta":     yaw_delta,
+        "pitch_delta":   pitch_delta,
+        "attack":        attack,
+        "use":           0,
         "selected_slot": 0,
-        "inv_op_type": 0,
-        "inv_slot_a": 0,
-        "inv_slot_b": 0,
+        "inv_op_type":   0,
+        "inv_slot_a":    0,
+        "inv_slot_b":    0,
     }
+
     return np.frombuffer(codec.encode_action_batch([rec]), dtype=spec.ACTION_DTYPE).copy()
 
 
 def _offset(idx: int) -> tuple[int, int, int]:
     # voxel layout is ((dy+R)*E + (dz+R))*E + (dx+R)
-    dx = idx % E - R
+    dx  = idx % E - R
     rem = idx // E
-    dz = rem % E - R
-    dy = rem // E - R
+    dz  = rem % E - R
+    dy  = rem // E - R
+
     return dx, dy, dz
 
 
 def _has_item(row) -> bool:
-    ids = np.asarray(row["inv_item_id"])
+    ids    = np.asarray(row["inv_item_id"])
     counts = np.asarray(row["inv_count"])
     return bool(((ids != 0) & (counts > 0)).any())
 
 
 def _aim(dx: int, dy: int, dz: int) -> tuple[float, float]:
     # absolute yaw and pitch to look at voxel center, eyes sit ~1.62 above feet
-    tx = dx + 0.5
-    ty = dy + 0.5 - 1.62
-    tz = dz + 0.5
+    tx    = dx + 0.5
+    ty    = dy + 0.5 - 1.62
+    tz    = dz + 0.5
     horiz = math.sqrt(tx * tx + tz * tz)
+
     # vanilla yaw 0 faces +Z and increases toward -X
-    yaw = -math.degrees(math.atan2(tx, tz))
+    yaw   = -math.degrees(math.atan2(tx, tz))
     pitch = -math.degrees(math.atan2(ty, horiz))
+
     return yaw, pitch
 
 
 def _run(transport, build_action, steps):
     # returns last obs, first obs with inventory, and whether target was ever in range
-    last = None
+    last       = None
     saw_target = False
-    gained = None
+    gained     = None
+
     for i in range(steps):
-        obs = transport.step(build_action(i))
-        row = obs[0]
+        obs  = transport.step(build_action(i))
+        row  = obs[0]
         last = obs
         if int(row["target_in_range"]) == 1 and int(row["target_block"]) != 0:
             saw_target = True
         if gained is None and _has_item(row):
             gained = obs.copy()
+
     return last, gained, saw_target
 
 
 @pytest.mark.slow
 def test_mining_e2e():
-    agents = 1
-    seed = 0
+    agents   = 1
+    seed     = 0
     registry = Registry.load(REGISTRY)
 
-    tmpdir = tempfile.mkdtemp(prefix="mcai_sock_")
-    shm_path = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+    tmpdir    = tempfile.mkdtemp(prefix="mcai_sock_")
+    shm_path  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
     sock_path = str(pathlib.Path(tmpdir) / "gym.sock")
 
     proc = launch(agents, seed, shm_path, sock_path)
@@ -111,15 +117,16 @@ def test_mining_e2e():
         reg_doc = json.loads(REGISTRY.read_text())
         # voxel_blocks uses block ids, the drop in inv_item_id uses item ids
         oak_block = reg_doc["blocks"]["minecraft:oak_log"]
-        oak_item = reg_doc["items"]["minecraft:oak_log"]
+        oak_item  = reg_doc["items"]["minecraft:oak_log"]
 
         # scan pristine spawn voxels for a reachable oak_log before mining alters the
         # world (reset restores pose but not broken blocks). only logs at body level
         # within bare hand reach are practically mineable from spawn
-        voxels = obs0[0]["voxel_blocks"]
-        log_idx = np.where(np.asarray(voxels) == oak_block)[0]
+        voxels     = obs0[0]["voxel_blocks"]
+        log_idx    = np.where(np.asarray(voxels) == oak_block)[0]
         log_offset = None
-        best = None
+        best       = None
+
         for idx in log_idx:
             dx, dy, dz = _offset(int(idx))
             if abs(dy) > 1:
@@ -127,6 +134,7 @@ def test_mining_e2e():
             dist = math.sqrt(dx * dx + dy * dy + dz * dz)
             if dist <= 3.5 and (best is None or dist < best[0]):
                 best = (dist, dx, dy, dz)
+
         if best is not None:
             log_offset = best[1:]
 
@@ -134,7 +142,7 @@ def test_mining_e2e():
         # dig straight down in bursts, ~22 ticks attack to break then ~10 idle so the
         # drop clears its pickup delay and gets collected before the agent descends
         cur_pitch = float(obs0[0]["pitch"])
-        period = 32
+        period    = 32
         dig_ticks = 22
 
         def _down(i):
@@ -142,6 +150,7 @@ def test_mining_e2e():
             dpitch = max(-15.0, min(15.0, 90.0 - cur_pitch))
             cur_pitch += dpitch
             digging = (i % period) < dig_ticks
+
             return _action(forward=0.0, pitch_delta=dpitch, attack=1 if digging else 0)
 
         last, gained, saw_target = _run(transport, _down, 6 * period)
@@ -154,13 +163,14 @@ def test_mining_e2e():
             f"inv_item_id nonzero={np.asarray(last[0]['inv_item_id']).nonzero()[0].tolist()}"
         )
 
-        items = np.asarray(proof[0]["inv_item_id"])
-        counts = np.asarray(proof[0]["inv_count"])
+        items    = np.asarray(proof[0]["inv_item_id"])
+        counts   = np.asarray(proof[0]["inv_count"])
         gathered = [
             (registry.name_of(int(it)), int(c))
             for it, c in zip(items, counts)
             if int(it) != 0 and int(c) > 0
         ]
+
         print(f"block below proof gathered {gathered}")
 
         # best effort oak_log path, runs after and may disturb the world
@@ -172,29 +182,32 @@ def test_mining_e2e():
             yaw, pitch = _aim(dx, dy, dz)
             print(f"oak_log reachable at offset ({dx},{dy},{dz}), aiming yaw={yaw:.1f} pitch={pitch:.1f}")
 
-            cyaw = float(base[0]["yaw"])
+            cyaw   = float(base[0]["yaw"])
             cpitch = float(base[0]["pitch"])
 
             def _trunk(i, _yaw=yaw, _pitch=pitch):
                 nonlocal cyaw, cpitch
-                dyaw = max(-30.0, min(30.0, _yaw - cyaw))
+                dyaw   = max(-30.0, min(30.0, _yaw - cyaw))
                 dpitch = max(-30.0, min(30.0, _pitch - cpitch))
-                cyaw += dyaw
+                cyaw   += dyaw
                 cpitch += dpitch
                 aligned = abs(_yaw - cyaw) < 15.0 and abs(_pitch - cpitch) < 15.0
+
                 # creep forward and hop to clear foliage while digging, then idle so the
                 # dropped log clears its pickup delay and gets collected
                 digging = i < 150
                 forward = 0.5 if (aligned and digging) else 0.0
-                jump = 1 if (aligned and digging and i % 20 < 3) else 0
+                jump    = 1 if (aligned and digging and i % 20 < 3) else 0
                 rec = {
                     "forward": forward, "strafe": 0.0, "jump": jump, "sneak": 0, "sprint": 0,
                     "yaw_delta": dyaw, "pitch_delta": dpitch, "attack": 1 if digging else 0,
                     "use": 0, "selected_slot": 0, "inv_op_type": 0, "inv_slot_a": 0, "inv_slot_b": 0,
                 }
+
                 return np.frombuffer(codec.encode_action_batch([rec]), dtype=spec.ACTION_DTYPE).copy()
 
             last, gained, _ = _run(transport, _trunk, 190)
+
             li = np.asarray(last[0]["inv_item_id"])
             lc = np.asarray(last[0]["inv_count"])
             if oak_item in li[lc > 0].tolist():
@@ -210,11 +223,13 @@ def test_mining_e2e():
     finally:
         if transport is not None:
             transport.close()
+
         proc.terminate()
         try:
             proc.wait(timeout=30)
         except Exception:
             proc.kill()
+
         pathlib.Path(shm_path).unlink(missing_ok=True)
         pathlib.Path(sock_path).unlink(missing_ok=True)
 

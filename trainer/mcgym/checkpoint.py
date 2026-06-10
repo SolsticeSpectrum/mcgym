@@ -1,4 +1,4 @@
-"""checkpoint save/load with keep n retention and onnx export."""
+"""checkpoint save/load with keep n retention and onnx export"""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ def _checkpoint_dirs(root: pathlib.Path):
 
 
 def save(directory, model, optimizer, meta: dict, keep_n: int = 5) -> pathlib.Path:
-    """write step_<steps>/ with state dicts and meta, point latest at it."""
+    """write step_<steps>/ with state dicts and meta, point latest at it"""
     root = pathlib.Path(directory)
     root.mkdir(parents=True, exist_ok=True)
 
@@ -44,8 +44,8 @@ def save(directory, model, optimizer, meta: dict, keep_n: int = 5) -> pathlib.Pa
 
 
 def load_latest(directory, model, optimizer) -> dict | None:
-    """load newest checkpoint into model and optimizer, returns meta or None."""
-    root = pathlib.Path(directory)
+    """load newest checkpoint into model and optimizer, returns meta or None"""
+    root   = pathlib.Path(directory)
     latest = root / "latest"
     if not latest.exists():
         dirs = _checkpoint_dirs(root) if root.exists() else []
@@ -63,11 +63,12 @@ def load_latest(directory, model, optimizer) -> dict | None:
         optimizer.load_state_dict(
             torch.load(ckpt / "optimizer.pt", map_location=loc, weights_only=True)
         )
+
     return json.loads((ckpt / "meta.json").read_text())
 
 
 def export_onnx(directory, model) -> pathlib.Path:
-    """export forward as (logits, value) onnx, returns the path."""
+    """export forward as (logits, value) onnx, returns the path"""
     import numpy as np
 
     from mcgym.models.policy import tensors
@@ -78,8 +79,8 @@ def export_onnx(directory, model) -> pathlib.Path:
     out = root / "model.onnx"
 
     device = next(model.parameters()).device
-    dummy = np.zeros(1, dtype=spec.OBS_DTYPE)
-    t = tensors(dummy, device)
+    dummy  = np.zeros(1, dtype=spec.OBS_DTYPE)
+    t      = tensors(dummy, device)
 
     # onnx wants positional inputs, rewrap into the obs dict
     class Wrap(torch.nn.Module):
@@ -89,12 +90,12 @@ def export_onnx(directory, model) -> pathlib.Path:
 
         def forward(self, voxel, voxel_far, target_block, scalars, inv_item_id, inv_count):
             return self.m.forward({
-                "voxel": voxel,
-                "voxel_far": voxel_far,
+                "voxel":        voxel,
+                "voxel_far":    voxel_far,
                 "target_block": target_block,
-                "scalars": scalars,
-                "inv_item_id": inv_item_id,
-                "inv_count": inv_count,
+                "scalars":      scalars,
+                "inv_item_id":  inv_item_id,
+                "inv_count":    inv_count,
             })
 
     torch.onnx.export(
@@ -111,13 +112,14 @@ def export_onnx(directory, model) -> pathlib.Path:
         input_names=["voxel", "voxel_far", "target_block", "scalars", "inv_item_id", "inv_count"],
         output_names=["logits", "value"],
         dynamic_axes={
-            "voxel": {0: "batch"},
-            "voxel_far": {0: "batch"},
+            "voxel":        {0: "batch"},
+            "voxel_far":    {0: "batch"},
             "target_block": {0: "batch"},
-            "scalars": {0: "batch"},
-            "inv_item_id": {0: "batch"},
-            "inv_count": {0: "batch"},
+            "scalars":      {0: "batch"},
+            "inv_item_id":  {0: "batch"},
+            "inv_count":    {0: "batch"},
         },
         opset_version=17,
     )
+
     return out
