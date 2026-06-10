@@ -260,13 +260,18 @@ def train(args: argparse.Namespace) -> None:
         get_action = inf[0].get_action
         if collect_stream is not None and os.environ.get("MCAI_COMPILE"):
             get_action = torch.compile(inf[0].get_action)
+        # Collect in the SAME precision as the update's recompute (bf16 autocast): a precision
+        # mismatch between the stored logprobs and the update's shows up as ratio noise at
+        # epoch 1 and inflates clip_frac. Also halves the forward's bandwidth.
+        use_bf16 = collect_stream is not None and bool(os.environ.get("MCAI_BF16"))
 
         def fwd(m, obs):
             with torch.no_grad():
                 if collect_stream is not None:
                     with torch.cuda.stream(collect_stream):
-                        a, lp, v = get_action(obs_to_tensors(obs, device))
-                        return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
+                        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_bf16):
+                            a, lp, v = get_action(obs_to_tensors(obs, device))
+                        return a.cpu().numpy(), lp.float().cpu().numpy(), v.float().cpu().numpy()
                 a, lp, v = get_action(obs_to_tensors(obs, device))
             return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
 
