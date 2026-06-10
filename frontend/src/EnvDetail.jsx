@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { drawAgentMini } from './miniRender.js'
+import { WATER, LAVA } from './voxelScene.js'
+
+const mediumTint = (head) =>
+  head === WATER ? 'rgba(40,90,210,0.42)' : head === LAVA ? 'rgba(235,110,20,0.5)' : null
 
 const POVW = 150
 const VH = 100 // shared height; top-down is VH x VH (square), POV is POVW x VH (wider)
@@ -23,7 +27,7 @@ export default function EnvDetail({ env, nPer, palette, onPick }) {
         for (let i = 0; i < nPer; i++) {
           const d = datas[i]
           if (!d) continue
-          nextMeta[i] = { wood: d.wood, look: d.look, attacking: d.attacking }
+          nextMeta[i] = { wood: d.wood, look: d.look, attacking: d.attacking, head: d.head }
           const c = cards.current[i]
           if (c && c.pov) drawAgentMini(d, palette, c.pov, c.top)
         }
@@ -43,7 +47,10 @@ export default function EnvDetail({ env, nPer, palette, onPick }) {
           <div key={i} onClick={() => onPick(i)} title={`agent ${i}`}
             style={{ background: '#11151f', border: '1px solid #1e2230', borderRadius: 8, cursor: 'pointer', overflow: 'hidden' }}>
             <div style={{ display: 'flex' }}>
-              <canvas ref={(el) => { cards.current[i] = { ...cards.current[i], pov: el } }} width={POVW} height={VH} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+              <div style={{ position: 'relative' }}>
+                <canvas ref={(el) => { cards.current[i] = { ...cards.current[i], pov: el } }} width={POVW} height={VH} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+                {mediumTint(m.head) && <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: mediumTint(m.head) }} />}
+              </div>
               <canvas ref={(el) => { cards.current[i] = { ...cards.current[i], top: el } }} width={VH} height={VH} style={{ display: 'block' }} />
             </div>
             <div style={{ padding: '4px 8px', display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
