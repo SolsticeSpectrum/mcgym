@@ -17,6 +17,26 @@ export default function AgentView({ env, i, palette }) {
   const api = useRef(null)
   const [info, setInfo] = useState(null)
   const [transparent, setTransparent] = useState(false)
+  // Draggable + resizable minimap card. w = total canvas width, h = height; top-down is h x h
+  // (square), POV is (w - h) x h (wider).
+  const [pos, setPos] = useState(() => ({ x: Math.max(10, window.innerWidth - 352), y: 54 }))
+  const [size, setSize] = useState({ w: 340, h: 120 })
+  const drag = useRef(null)
+  useEffect(() => {
+    const move = (e) => {
+      const d = drag.current
+      if (!d) return
+      if (d.type === 'move') setPos({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) })
+      else setSize({ w: Math.max(220, d.pw + (e.clientX - d.sx)), h: Math.max(90, d.ph + (e.clientY - d.sy)) })
+    }
+    const up = () => { drag.current = null }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+  }, [])
+  const startDrag = (e) => { drag.current = { type: 'move', sx: e.clientX, sy: e.clientY, px: pos.x, py: pos.y }; e.preventDefault() }
+  const startResize = (e) => { drag.current = { type: 'resize', sx: e.clientX, sy: e.clientY, pw: size.w, ph: size.h }; e.preventDefault(); e.stopPropagation() }
+  const povW = Math.max(90, size.w - size.h)
 
   useEffect(() => {
     const mount = wrap.current
@@ -81,14 +101,16 @@ export default function AgentView({ env, i, palette }) {
           <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> transparent
         </label>
       </div>
-      <div style={{ position: 'absolute', top: 10, right: 10, background: '#0d1018cc', border: '1px solid #1e2230', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: pos.x, top: pos.y, background: '#0d1018ee', border: '1px solid #2a3040', borderRadius: 8, overflow: 'hidden', userSelect: 'none', boxShadow: '0 4px 16px #0008' }}>
+        <div onPointerDown={startDrag} style={{ cursor: 'move', padding: '3px 8px', fontSize: 11, color: '#9aa4bf', background: '#161b27', display: 'flex', justifyContent: 'space-between' }}>
+          <span>POV</span><span style={{ color: '#5b6378' }}>drag · resize ↘</span><span>top-down</span>
+        </div>
         <div style={{ display: 'flex' }}>
-          <canvas ref={povRef} width={POVW} height={VH} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
-          <canvas ref={topRef} width={VH} height={VH} style={{ display: 'block' }} />
+          <canvas ref={povRef} width={povW} height={size.h} style={{ display: 'block', borderRight: '1px solid #1e2230' }} />
+          <canvas ref={topRef} width={size.h} height={size.h} style={{ display: 'block' }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px', fontSize: 11, color: '#6b7390' }}>
-          <span>POV</span><span>top-down</span>
-        </div>
+        <div onPointerDown={startResize} title="resize"
+          style={{ position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, cursor: 'nwse-resize', background: 'linear-gradient(135deg, transparent 45%, #5b6378 45%, #5b6378 70%, transparent 70%)' }} />
       </div>
       <div style={{ position: 'absolute', bottom: 8, left: 10, color: '#6b7390', fontSize: 12 }}>drag to orbit · scroll to zoom</div>
     </div>
