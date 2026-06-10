@@ -1,4 +1,4 @@
-"""Launch the mcgym process and wait until its transport is live"""
+"""launch the mcgym process and wait until its transport is live"""
 from __future__ import annotations
 
 import os
@@ -16,7 +16,7 @@ def _drain(stream) -> None:
 
 
 def launch(agents: int, seed: int, shm: str, sock: str, timeout: float = 180.0) -> subprocess.Popen:
-    """Start mcgym and block until it prints the ready line"""
+    """start mcgym and block until it prints the ready line"""
     gym = os.environ.get("MCGYM")
     if not gym:
         raise RuntimeError("MCGYM not set, point it at the mcgym release binary")

@@ -21,7 +21,7 @@ pub fn fill_voxels(
     out:    &mut [i32],
 ) {
     debug_assert_eq!(out.len(), VOXEL_CELLS);
-    // todo legit mode occlusion, enclosed cells should read HIDDEN_BLOCK_ID like the java gym
+    // todo legit mode occlusion, enclosed cells should read HIDDEN_BLOCK_ID
     world.fill_voxels(reg, cx, cy, cz, stride, out);
 }
 
