@@ -1,5 +1,4 @@
 //! agent state + vanilla style player movement and aabb vs voxel collision
-//! moveRelative -> collide -> gravity/friction with the standard constants
 
 use pumpkin_data::BlockState;
 
@@ -37,21 +36,23 @@ impl Aabb {
         self.max[axis] += d;
     }
 
-    /// do the boxes overlap on the two axes other than ax
+    // do the boxes overlap on the two axes other than ax
     fn overlaps_other(&self, b: &Self, ax: usize) -> bool {
         for &o in &[(ax + 1) % 3, (ax + 2) % 3] {
             if self.max[o] <= b.min[o] || self.min[o] >= b.max[o] {
                 return false;
             }
         }
+
         true
     }
 
-    /// clamp signed motion d along ax so this box does not pass through b
+    // clamp signed motion d along ax so this box does not pass through b
     fn clamp_axis(&self, b: &Self, ax: usize, d: f64) -> f64 {
         if !self.overlaps_other(b, ax) {
             return d;
         }
+
         if d > 0.0 && self.max[ax] <= b.min[ax] + EPS {
             (b.min[ax] - self.max[ax]).min(d).max(0.0)
         } else if d < 0.0 && self.min[ax] >= b.max[ax] - EPS {
@@ -106,7 +107,7 @@ impl Agent {
         }
     }
 
-    /// add one item, stack onto a matching non full slot else first empty, false if full
+    // stack onto a matching non full slot else first empty, false if full
     pub fn add_item(&mut self, id: i32) -> bool {
         for s in 0..INV_SLOTS {
             if self.inv_item_id[s] == id && self.inv_count[s] < 64 {
@@ -114,6 +115,7 @@ impl Agent {
                 return true;
             }
         }
+
         for s in 0..INV_SLOTS {
             if self.inv_count[s] == 0 {
                 self.inv_item_id[s] = id;
@@ -121,6 +123,7 @@ impl Agent {
                 return true;
             }
         }
+
         false
     }
 
@@ -131,7 +134,7 @@ impl Agent {
             .sum()
     }
 
-    /// block coords of the feet (the voxel grid centre)
+    // feet block coords, the voxel grid centre
     pub fn block_pos(&self) -> [i32; 3] {
         [
             self.pos[0].floor() as i32,
@@ -140,8 +143,7 @@ impl Agent {
         ]
     }
 
-
-    /// one tick: camera, movement input, jump, collision, gravity, friction
+    // one tick: camera, moveRelative, jump, collide, gravity/friction
     pub fn step(&mut self, world: &World, act: &Action) {
         self.yaw  += act.yaw_delta;
         self.pitch = (self.pitch + act.pitch_delta).clamp(-90.0, 90.0);
@@ -166,12 +168,13 @@ impl Agent {
         self.vel[2] *= friction;
     }
 
-    /// add yaw rotated input to horizontal velocity (vanilla moveRelative)
+    // vanilla moveRelative, yaw rotated input added to horizontal velocity
     fn move_relative(&mut self, amount: f64, forward: f64, strafe: f64) {
         let d2 = forward * forward + strafe * strafe;
         if d2 < EPS {
             return;
         }
+
         let scale = if d2 > 1.0 { amount / d2.sqrt() }
                     else { amount };
         let (f, s)     = (forward * scale, strafe * scale);
@@ -181,7 +184,7 @@ impl Agent {
         self.vel[2] += f * cos + s * sin;
     }
 
-    /// sweep the player box by vel against block colliders, resolve y then x then z
+    // sweep the player box by vel against block colliders, resolve y then x then z
     fn move_and_collide(&mut self, world: &World) {
         let want   = self.vel;
         let mut bb = Aabb::player(self.pos);
@@ -204,7 +207,6 @@ impl Agent {
         }
     }
 
-    /// all block collision aabbs overlapping the box swept by vel
     fn nearby_block_boxes(world: &World, bb: &Aabb, vel: [f64; 3]) -> Vec<Aabb> {
         let mut lo = [0i32; 3];
         let mut hi = [0i32; 3];
@@ -214,6 +216,7 @@ impl Agent {
             lo[ax] = a.floor() as i32;
             hi[ax] = b.floor() as i32;
         }
+
         let mut out = Vec::new();
         for bx in lo[0]..=hi[0] {
             for by in lo[1]..=hi[1] {
@@ -232,6 +235,7 @@ impl Agent {
                 }
             }
         }
+
         out
     }
 }

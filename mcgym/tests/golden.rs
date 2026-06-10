@@ -1,5 +1,4 @@
 //! codec must reproduce the canonical golden fixtures byte for byte and round trip them
-//! same bytes the java gym, python trainer and fabric mod agree on
 
 use std::path::PathBuf;
 

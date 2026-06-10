@@ -1,30 +1,26 @@
 # MCGym
 
 RLGym but for Minecraft. A from scratch PPO stack with a fast headless gym
-built on Pumpkin, vanilla worldgen and physics, no shortcuts. Trained policies
-run in an unmodified Minecraft client through a Fabric mod, the agent sees only
-structured observations, no pixels.
+built on Pumpkin, vanilla worldgen and physics. Trained policies run in a Fabric mod, 
+the agent sees only structured observations, no pixels.
 
-Currently learning to gather wood. The architecture is task driven, pvp, parkour
-or boss tasks plug in as one python file each.
+Currently learning to gather wood. The architecture is task driven.
 
 ## How it works
 
 ```
-mcgym/        rust gym, Pumpkin world sim behind a shm + unix socket transport
-trainer/      pytorch PPO, the python package is also called mcgym
-schema/       single source of truth for the obs/action binary layout
-fabric-mod/   runs an exported onnx policy in the live client
-frontend/     react + three.js training monitor
-docker/       one compose file, fresh gpu box to running training
+mcgym/       rust gym, Pumpkin world sim behind a shm + unix socket transport
+trainer/     pytorch PPO
+schema/      single source of truth for the obs/action binary layout
+fabric-mod/  runs an exported onnx policy in the live client
+frontend/    react + three.js training monitor
+docker/      fresh gpu box to running training
 ```
 
 One gym process is one world with N agents stepped in lockstep. The trainer talks
 to many gyms over shared memory, ticks them in parallel across cores and trains on
 gpu, 2048 agents at ~14.7k steps/s on one RTX 6000. Observations are a 17x17x17
 voxel grid around the agent plus a strided far shell, scalars and the inventory.
-Everything that is not game mechanics lives in a task, reward shaping, episode
-rules, the progress metric.
 
 ## Train
 
@@ -35,8 +31,7 @@ MCGYM=../mcgym/target/release/mcgym .venv/bin/python -m mcgym.train --task wood 
 ```
 
 The monitor at http://localhost:9080 shows every agent live, per env minimaps,
-first person and top down views, orbitable 3d voxel view. `trainer/scripts/train_box.sh`
-carries the tuned big gpu config.
+ `trainer/scripts/train_box.sh` carries the tuned big gpu config.
 
 ## Run a policy in the real game
 

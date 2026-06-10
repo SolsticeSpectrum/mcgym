@@ -1,9 +1,7 @@
 package com.mcgym.policy;
 
-/**
- * The trainers multi discrete action space, 22 logits split into 7 heads
- * by BINS, argmax per head gives [forward, strafe, jump, sprint, yaw, pitch, attack].
- */
+// the trainers multi discrete action space, 22 logits split into 7 heads by BINS,
+// argmax per head gives [forward, strafe, jump, sprint, yaw, pitch, attack]
 public final class Actions {
 
     public static final int[] BINS = {3, 3, 2, 2, 5, 5, 2};
@@ -12,15 +10,14 @@ public final class Actions {
     private static final float[] STRAFE  = {-1.0f, 0.0f, 1.0f};
     private static final float[] CAMERA  = {-10.0f, -3.0f, 0.0f, 3.0f, 10.0f};
 
-    public float forward;
-    public float strafe;
+    public float   forward;
+    public float   strafe;
     public boolean jump;
     public boolean sprint;
-    public float yaw;
-    public float pitch;
+    public float   yaw;
+    public float   pitch;
     public boolean attack;
 
-    /** Decode raw logits via per head argmax. */
     public static Actions decode(float[] logits) {
         int[] idx = new int[BINS.length];
         int off = 0;
@@ -37,6 +34,7 @@ public final class Actions {
         a.yaw     = CAMERA[idx[4]];
         a.pitch   = CAMERA[idx[5]];
         a.attack  = idx[6] != 0;
+
         return a;
     }
 
@@ -49,6 +47,7 @@ public final class Actions {
                 best = i;
             }
         }
+        
         return best;
     }
 }

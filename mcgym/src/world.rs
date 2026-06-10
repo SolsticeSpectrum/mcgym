@@ -1,5 +1,4 @@
 //! headless vanilla worldgen via pumpkin, chunks generated straight into an in memory cache
-//! ensure_terrain_chunk is surface only (fast), ensure_chunk runs features so trees exist
 
 use std::collections::HashMap;
 
@@ -73,23 +72,26 @@ impl World {
         self.bottom_y + self.height
     }
 
-    /// terrain only, no trees, for read/throughput benchmarking
+    // surface only, no trees, for read/throughput benchmarking
     pub fn ensure_terrain_chunk(&mut self, cx: i32, cz: i32) {
         if self.chunks.contains_key(&(cx, cz)) {
             return;
         }
+
         let mut c = ProtoChunk::new(cx, cz, &self.generator);
         c.step_to_biomes(&self.generator);
         c.step_to_noise(&self.generator);
         c.step_to_surface(&self.generator);
+
         self.chunks.insert((cx, cz), c);
     }
 
-    /// full vanilla generation through features (trees/logs present), cached
+    // full vanilla generation through features
     pub fn ensure_chunk(&mut self, cx: i32, cz: i32) {
         if self.chunks.contains_key(&(cx, cz)) {
             return;
         }
+
         let chunk = generate_single_chunk(
             &self.generator.dimension,
             self.generator.biome_mixer_seed,
@@ -103,35 +105,45 @@ impl World {
             Chunk::Proto(boxed) => *boxed,
             Chunk::Level(_)     => unreachable!("features stage stays a proto chunk"),
         };
+
         self.chunks.insert((cx, cz), proto);
     }
 
-    /// raw block state id at world coords, None if ungenerated or y out of range
     #[inline]
     pub fn block_state_raw(&self, x: i32, y: i32, z: i32) -> Option<u16> {
         let local_y = y - self.bottom_y;
         if local_y < 0 || local_y >= self.height {
             return None;
         }
+
         let chunk = self.chunks.get(&(x >> 4, z >> 4))?;
         Some(chunk.get_block_state_raw(x & 15, local_y, z & 15))
     }
 
-    /// set block to air, returns the old state id
+    // set block to air, returns the old state id
     pub fn break_block(&mut self, x: i32, y: i32, z: i32) -> Option<u16> {
         let local_y = y - self.bottom_y;
         if local_y < 0 || local_y >= self.height {
             return None;
         }
+
         let chunk = self.chunks.get_mut(&(x >> 4, z >> 4))?;
         let old = chunk.get_block_state_raw(x & 15, local_y, z & 15);
         chunk.set_block_state(x, y, z, Block::AIR.default_state);
+
         Some(old)
     }
 
-    /// fill voxel grid centred at (cx,cy,cz) with stride, mapped to mcai ints
-    /// caches the chunk ptr across cells, loop is dy>dz>dx so neighbours share a chunk
-    pub fn fill_voxels(&self, reg: &Registry, cx: i32, cy: i32, cz: i32, stride: i32, out: &mut [i32]) {
+    // chunk ptr cached across cells, loop is dy>dz>dx so neighbours share a chunk
+    pub fn fill_voxels(
+        &self,
+        reg:    &Registry,
+        cx:     i32,
+        cy:     i32,
+        cz:     i32,
+        stride: i32,
+        out:    &mut [i32]
+    ) {
         let r    = VOXEL_RADIUS as i32;
         let edge = VOXEL_EDGE as i32;
         let mut cur:       Option<(i32, i32)>  = None;
@@ -149,11 +161,13 @@ impl World {
                         out[idx] = 0;
                         continue;
                     }
+
                     let ck = (wx >> 4, wz >> 4);
                     if cur != Some(ck) {
                         cur       = Some(ck);
                         cur_chunk = self.chunks.get(&ck);
                     }
+                    
                     let sid  = cur_chunk.map_or(0, |c| c.get_block_state_raw(wx & 15, local_y, wz & 15));
                     out[idx] = reg.block(sid);
                 }
@@ -161,7 +175,7 @@ impl World {
         }
     }
 
-    /// drop chunks not within radius of any center, bounds memory on long roaming runs
+    // drop chunks not within radius of any center
     pub fn retain_chunks_near(&mut self, centers: &[(i32, i32)], radius: i32) {
         self.chunks.retain(|&(cx, cz), _| {
             centers

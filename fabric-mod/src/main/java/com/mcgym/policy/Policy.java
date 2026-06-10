@@ -11,12 +11,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * The trained policy onnx graph.
- *
- * Inputs are int32 like the schema, voxel[1,4913] voxel_far[1,4913] target_block[1]
- * scalars f32[1,18] inv_item_id[1,41] inv_count f32[1,41], outputs logits f32[1,22] value f32[1].
- */
+// the trained policy onnx graph, int32 inputs like the schema, outputs logits and value
 public final class Policy implements AutoCloseable {
 
     public static final int VOXEL   = 4913;
@@ -24,14 +19,14 @@ public final class Policy implements AutoCloseable {
     public static final int INV     = 41;
 
     private final OrtEnvironment env;
-    private final OrtSession session;
+    private final OrtSession     session;
 
     public Policy(Path onnx) throws OrtException {
         this.env = OrtEnvironment.getEnvironment();
         this.session = env.createSession(onnx.toString(), new OrtSession.SessionOptions());
     }
 
-    /** Run one observation, returns the 22 raw logits. */
+    // run one observation, returns the 22 raw logits
     public float[] run(int[] voxel, int[] voxelFar, int target, float[] scalars, int[] invId, float[] invCount) throws OrtException {
         OnnxTensor tVoxel    = OnnxTensor.createTensor(env, IntBuffer.wrap(voxel),             new long[]{1, VOXEL});
         OnnxTensor tFar      = OnnxTensor.createTensor(env, IntBuffer.wrap(voxelFar),          new long[]{1, VOXEL});
