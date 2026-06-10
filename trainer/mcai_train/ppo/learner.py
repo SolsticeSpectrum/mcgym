@@ -42,6 +42,12 @@ class PPOLearner:
         # embedding-gather work, so halving the bytes (and hitting tensor cores) is the win.
         # Loss math stays fp32 (computed outside the autocast region); weights/optimizer fp32.
         self.autocast = fused and bool(os.environ.get("MCAI_BF16"))
+        # Compile only the update's evaluate path: minibatch shape is static, so this is one
+        # compile that fuses the embedding-gather/permute/ReLU chains and cuts kernel launches.
+        # The collect/snapshot models stay eager (deepcopy of compiled modules is fragile).
+        self._evaluate = model.evaluate
+        if fused and os.environ.get("MCAI_COMPILE"):
+            self._evaluate = torch.compile(model.evaluate)
 
     def update(self, buffer) -> dict:
         # Metrics stay 0-dim GPU tensors until the end: a .item() per minibatch is a full
@@ -64,7 +70,7 @@ class PPOLearner:
                 adv = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
-                    logprob, entropy, value = self.model.evaluate(obs_tensors, action_idx)
+                    logprob, entropy, value = self._evaluate(obs_tensors, action_idx)
                 logprob, entropy, value = logprob.float(), entropy.float(), value.float()
 
                 ratio = torch.exp(logprob - old_logprob)
