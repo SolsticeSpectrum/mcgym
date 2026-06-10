@@ -21,6 +21,9 @@ from .schema import spec
 from .tasks.gather_wood import log_item_ids, wood_count
 
 _COLORS_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "block_colors.json"
+_DIST = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if not _DIST.is_dir():
+    _DIST = None
 
 
 class TrainMonitor:
@@ -127,8 +130,27 @@ class TrainMonitor:
                     self._send(json.dumps(monitor._agent_voxel(env, i)).encode(), "application/json")
                 elif parsed.path == "/palette":
                     self._send(monitor._palette_json.encode(), "application/json")
+                elif self._serve_static(parsed.path):
+                    pass
                 else:
                     self._send(_LANDING.encode(), "text/html")
+
+            def _serve_static(self, path: str) -> bool:
+                """Serve the built React app from frontend/dist (SPA: unknown paths -> index.html)."""
+                if _DIST is None:
+                    return False
+                rel = path.lstrip("/") or "index.html"
+                f = (_DIST / rel).resolve()
+                if not (str(f).startswith(str(_DIST)) and f.is_file()):
+                    f = _DIST / "index.html"
+                    if not f.is_file():
+                        return False
+                ctype = {
+                    ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+                    ".svg": "image/svg+xml", ".json": "application/json", ".ico": "image/x-icon",
+                }.get(f.suffix, "application/octet-stream")
+                self._send(f.read_bytes(), ctype)
+                return True
 
         return Handler
 

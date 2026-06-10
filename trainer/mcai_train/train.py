@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import os
 import json
 import pathlib
 import threading
@@ -244,20 +245,25 @@ def train(args: argparse.Namespace) -> None:
                 a, lp, v = m.get_action(obs_to_tensors(obs, device))
             return a.cpu().numpy(), lp.cpu().numpy(), v.cpu().numpy()
 
+        prof_on = bool(os.environ.get("MCAI_PROFILE"))
+
         def collect(buf):
             nonlocal obsA, obsB, epr
             buf.reset()
             completed = []
             m = inf[0]
+            pf = ps = pr = pp = 0.0
             for _ in range(args.rollout_len):
+                t = time.perf_counter()
                 aA, lpA, vA = fwd(m, obsA)
                 envA.step_send(aA)              # A's gyms tick (CPU) ...
                 aB, lpB, vB = fwd(m, obsB)      # ... while B's forward runs (GPU)
                 envB.step_send(aB)
+                pf += time.perf_counter() - t; t = time.perf_counter()
                 oA, rA, dA = envA.step_recv()
                 oB, rB, dB = envB.step_recv()
-                # Concatenate each field once and reuse (was concatenating obs+act twice/step:
-                # once for the buffer, once for the monitor — ~46 MB obs copy each).
+                pr += time.perf_counter() - t; t = time.perf_counter()
+                # Concatenate each field once and reuse (was concatenating obs+act twice/step).
                 obs_cat = np.concatenate([obsA, obsB])
                 act_cat = np.concatenate([aA, aB])
                 rew = np.concatenate([rA, rB])
@@ -270,9 +276,12 @@ def train(args: argparse.Namespace) -> None:
                 obsA, obsB = oA, oB
                 if monitor is not None:
                     monitor.update(obs_cat, act_cat, rew, cumulative_timesteps)
+                pp += time.perf_counter() - t
             _, _, lvA = fwd(m, obsA)
             _, _, lvB = fwd(m, obsB)
             buf.compute_gae(np.concatenate([lvA, lvB]))
+            if prof_on:
+                print(f"[profile] fwd+send={pf:.1f}s recv={pr:.1f}s post={pp:.1f}s", flush=True)
             return completed
 
         def wood_mean():
