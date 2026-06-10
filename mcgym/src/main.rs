@@ -1,13 +1,13 @@
-//! mcai-gym binary: parse the run parameters, boot the Pumpkin-backed world + agents, map the
+//! mcgym binary: parse the run parameters, boot the Pumpkin-backed world + agents, map the
 //! transport, and serve the RESET/STEP/CLOSE loop. Prints `MCAI_TRANSPORT_READY` once live.
 //!
-//! Usage: mcai-gym --shm PATH --sock PATH --agents N [--seed S] [--arena wild] [--curriculum ""]
+//! Usage: mcgym --shm PATH --sock PATH --agents N [--seed S] [--arena wild] [--curriculum ""]
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use mcai_gym::gym::GymState;
-use mcai_gym::transport::Transport;
+use mcgym::gym::GymState;
+use mcgym::transport::Transport;
 
 struct Args {
     shm: PathBuf,
@@ -58,7 +58,7 @@ fn run() -> Result<(), String> {
     }
 
     eprintln!(
-        "[mcai-gym] booting {} agents (seed={}, spacing={})…",
+        "[mcgym] booting {} agents (seed={}, spacing={})…",
         args.agents, args.seed, args.spacing
     );
     let mut gym = GymState::new(args.agents, args.seed, args.spacing);
@@ -75,7 +75,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("[mcai-gym] error: {e}");
+            eprintln!("[mcgym] error: {e}");
             ExitCode::FAILURE
         }
     }

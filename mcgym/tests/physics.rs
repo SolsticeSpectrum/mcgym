@@ -1,9 +1,9 @@
 //! Physics: an agent dropped over real terrain must fall under gravity and land on the surface
 //! (collision stops it, on_ground becomes true) rather than passing through or floating.
 
-use mcai_gym::physics::Agent;
-use mcai_gym::schema::Action;
-use mcai_gym::world::World;
+use mcgym::physics::Agent;
+use mcgym::schema::Action;
+use mcgym::world::World;
 
 /// Highest solid block at (x,z): scan down for the first block with a collision shape.
 fn surface_top(world: &World, x: i32, z: i32) -> i32 {

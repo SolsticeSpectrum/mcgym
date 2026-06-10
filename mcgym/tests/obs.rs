@@ -1,10 +1,10 @@
 //! Voxel extraction must read real terrain with correct ordering + registry mapping: the grid
 //! centre cell equals the block the agent stands in, and a tree's logs land in the grid.
 
-use mcai_gym::obs::{center_index, fill_voxels};
-use mcai_gym::registry::Registry;
-use mcai_gym::schema::VOXEL_CELLS;
-use mcai_gym::world::World;
+use mcgym::obs::{center_index, fill_voxels};
+use mcgym::registry::Registry;
+use mcgym::schema::VOXEL_CELLS;
+use mcgym::world::World;
 use pumpkin_data::Block;
 
 #[test]

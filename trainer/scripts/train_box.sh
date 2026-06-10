@@ -10,13 +10,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."  # -> trainer/
 
 REPO="$(cd .. && pwd)"
-# Build once: (cd "$REPO/rust-gym" && cargo build --release)
-export MCAI_RUST_GYM="${MCAI_RUST_GYM:-$REPO/rust-gym/target/release/mcai-gym}"
+# Build once: (cd "$REPO/mcgym" && cargo build --release)
+export MCGYM="${MCGYM:-$REPO/mcgym/target/release/mcgym}"
 export MCAI_GYM_SPACING="${MCAI_GYM_SPACING:-128}"   # blocks between agents within a gym
 export PYTHONUNBUFFERED=1
 
-if [[ ! -x "$MCAI_RUST_GYM" ]]; then
-  echo "Rust gym binary not found at $MCAI_RUST_GYM — build it: (cd $REPO/rust-gym && cargo build --release)" >&2
+if [[ ! -x "$MCGYM" ]]; then
+  echo "Rust gym binary not found at $MCGYM — build it: (cd $REPO/mcgym && cargo build --release)" >&2
   exit 1
 fi
 
@@ -30,7 +30,7 @@ ASYNC="${ASYNC:-1}"          # K-cohort async collect on by default (ASYNC= to d
 COHORTS="${COHORTS:-4}"
 RUN="${RUN:-woodopt}"
 
-echo "[train_box] gym=$MCAI_RUST_GYM agents=$((NUM_ENVS*N_AGENTS)) minibatch=$MINIBATCH rollout=$ROLLOUT pipeline=on"
+echo "[train_box] gym=$MCGYM agents=$((NUM_ENVS*N_AGENTS)) minibatch=$MINIBATCH rollout=$ROLLOUT pipeline=on"
 exec .venv/bin/python -m mcai_train.train \
   --num-envs "$NUM_ENVS" \
   --n-agents "$N_AGENTS" \

@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use memmap2::Mmap;
-use mcai_gym::schema::{ACTION_NBYTES, Action, OBS_NBYTES, Obs};
-use mcai_gym::transport::{
+use mcgym::schema::{ACTION_NBYTES, Action, OBS_NBYTES, Obs};
+use mcgym::transport::{
     CMD_CLOSE, CMD_RESET, CMD_STEP, HEADER_NBYTES, MAGIC, REPLY_OK, Transport, Gym,
 };
 

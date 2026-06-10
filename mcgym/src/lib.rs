@@ -1,4 +1,4 @@
-//! mcai-gym: a fast headless Minecraft RL gym for the MCAI trainer.
+//! mcgym: a fast headless Minecraft RL gym for the MCAI trainer.
 //!
 //! Built on Pumpkin's world simulation (vanilla-faithful), driven over shared
 //! memory by the PyTorch PPO trainer. This crate currently exposes the schema
