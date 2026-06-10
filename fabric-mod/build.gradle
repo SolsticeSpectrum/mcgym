@@ -14,12 +14,10 @@ repositories {
 }
 
 loom {
-	splitEnvironmentSourceSets()
-
-	mods {
-		"mcai-agent" {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
+	runs {
+		client {
+			// repo root with weights/ and schema/, the mod reads both by name
+			environmentVariable "MCAI_HOME", rootDir.parentFile.absolutePath
 		}
 	}
 }
@@ -30,9 +28,7 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// ONNX Runtime (plain Maven Central jar). On the dev runtime classpath for
-	// runClient, and nested into the built jar via Loom's include so a shipped
-	// mod carries the runtime + native libs with it.
+	// onnx runtime, nested into the jar so a shipped mod carries the natives
 	implementation "com.microsoft.onnxruntime:onnxruntime:${project.onnxruntime_version}"
 	include "com.microsoft.onnxruntime:onnxruntime:${project.onnxruntime_version}"
 }
@@ -53,4 +49,3 @@ java {
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21
 }
-

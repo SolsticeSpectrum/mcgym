@@ -47,7 +47,7 @@ services:
       priority=10
       stdout_logfile=/drive2/train.log
       redirect_stderr=true
-      environment=REPO_URL="${REPO_URL:?set REPO_URL in docker/.env}",RUN="${RUN:-woodopt}",NUM_ENVS="${NUM_ENVS:-32}",N_AGENTS="${N_AGENTS:-64}",ROLLOUT="${ROLLOUT:-128}",MINIBATCH="${MINIBATCH:-16384}",EPOCHS="${EPOCHS:-2}",COHORTS="${COHORTS:-4}",MODEL_SCALE="${MODEL_SCALE:-3}",MONITOR_PORT="${MONITOR_PORT:-9080}"
+      environment=REPO_URL="${REPO_URL:?set REPO_URL in docker/.env}",TASK="${TASK:-wood}",NUM_ENVS="${NUM_ENVS:-32}",AGENTS="${AGENTS:-64}",ROLLOUT="${ROLLOUT:-128}",MINIBATCH="${MINIBATCH:-16384}",EPOCHS="${EPOCHS:-2}",COHORTS="${COHORTS:-4}",SCALE="${SCALE:-3}",MONITOR_PORT="${MONITOR_PORT:-9080}"
       EOF
       chmod 600 /opt/init/authorized_keys
       chown -R 1000:1000 /opt/init

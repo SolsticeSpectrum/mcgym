@@ -81,15 +81,15 @@ train_mode() {
     "$VENV/bin/pip" install --quiet -e "$SRC/trainer"
     ln -sfn "$VENV" "$SRC/trainer/.venv"   # train_box.sh runs .venv/bin/python
 
-    (cd "$SRC/rust-gym" && cargo build --release)
+    (cd "$SRC/mcgym" && cargo build --release)
 
     # The wood task, forever: train_box.sh carries the tuned defaults; the compose
     # passes knob overrides via the supervisord program environment. RESUME=1 is
     # safe with no checkpoint (fresh start). Crashes restart after a pause.
-    export MCAI_BF16=1 MCAI_COMPILE=1 MCAI_PROFILE=1
+    export MCGYM_BF16=1 MCGYM_COMPILE=1 MCGYM_PROFILE=1
     while true; do
-        pkill -9 -f "mcai-gym --shm" 2>/dev/null || true
-        RESUME=1 CKPT_DIR="$RUNS/${RUN:-woodopt}" bash "$SRC/trainer/scripts/train_box.sh" \
+        pkill -9 -f "mcgym --shm" 2>/dev/null || true
+        RESUME=1 RUN="${TASK:-wood}" CKPT_DIR="$RUNS/${TASK:-wood}" bash "$SRC/trainer/scripts/train_box.sh" \
             || echo "[bootstrap] train exited ($?)"
         echo "[bootstrap] restarting training in 15s"
         sleep 15
