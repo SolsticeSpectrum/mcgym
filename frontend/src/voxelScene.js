@@ -14,11 +14,55 @@ export function createVoxelScene() {
   sun.position.set(0.6, 1, 0.4)
   scene.add(sun)
 
-  const blockMat = new THREE.MeshLambertMaterial({ side: THREE.FrontSide })
-  const blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), blockMat, MAX)
-  blocks.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-  blocks.count = 0
+  // Exposed-face mesh: only faces whose neighbour cell is empty are emitted, so interior faces
+  // (shared between adjacent solid blocks) are never drawn — correct even in transparent mode.
+  const blockMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.FrontSide })
+  const blockGeo = new THREE.BufferGeometry()
+  const blocks = new THREE.Mesh(blockGeo, blockMat)
   scene.add(blocks)
+  // 6 faces as CCW-outward quads (triangulated 0,1,2,0,2,3) with their outward normal.
+  const FACES = [
+    { n: [1, 0, 0], c: [[0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]] },
+    { n: [-1, 0, 0], c: [[-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5]] },
+    { n: [0, 1, 0], c: [[-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]] },
+    { n: [0, -1, 0], c: [[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5]] },
+    { n: [0, 0, 1], c: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
+    { n: [0, 0, -1], c: [[0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]] },
+  ]
+  const TRI = [0, 1, 2, 0, 2, 3]
+  const key = (x, y, z) => (x + 8) + (y + 8) * 17 + (z + 8) * 289
+  const colorFor = (id, palette) => {
+    const c = palette[String(id)]
+    return c && c.length ? c : '#5a5a5a'
+  }
+
+  function buildBlocks(cells, palette) {
+    const occ = new Set()
+    for (const c of cells) occ.add(key(c[0], c[1], c[2]))
+    const pos = []
+    const nor = []
+    const colr = []
+    const tmp = new THREE.Color()
+    for (const [dx, dy, dz, id] of cells) {
+      tmp.set(colorFor(id, palette))
+      for (const f of FACES) {
+        const [nx, ny, nz] = f.n
+        const bx = dx + nx, by = dy + ny, bz = dz + nz
+        const inside = bx >= -8 && bx <= 8 && by >= -8 && by <= 8 && bz >= -8 && bz <= 8
+        if (inside && occ.has(key(bx, by, bz))) continue // neighbour solid -> face hidden
+        for (const vi of TRI) {
+          const v = f.c[vi]
+          pos.push(dx + v[0], dy + v[1], dz + v[2])
+          nor.push(nx, ny, nz)
+          colr.push(tmp.r, tmp.g, tmp.b)
+        }
+      }
+    }
+    blockGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    blockGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3))
+    blockGeo.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3))
+    blockGeo.computeBoundingSphere()
+  }
 
   // Steve: legs + body + a head that yaws/pitches, nose for facing. Feet on top of the centre cell.
   const steve = new THREE.Group()
@@ -62,26 +106,8 @@ export function createVoxelScene() {
   breakBox.visible = false
   scene.add(breakBox)
 
-  const dummy = new THREE.Object3D()
-  const col = new THREE.Color()
-  const colorFor = (id, palette) => {
-    const c = palette[String(id)]
-    return c && c.length ? c : '#5a5a5a'
-  }
-
   function update(data, palette) {
-    const cells = data.cells || []
-    blocks.count = cells.length
-    for (let k = 0; k < cells.length; k++) {
-      const [dx, dy, dz, id] = cells[k]
-      dummy.position.set(dx, dy, dz)
-      dummy.updateMatrix()
-      blocks.setMatrixAt(k, dummy.matrix)
-      col.set(colorFor(id, palette))
-      blocks.setColorAt(k, col)
-    }
-    blocks.instanceMatrix.needsUpdate = true
-    if (blocks.instanceColor) blocks.instanceColor.needsUpdate = true
+    buildBlocks(data.cells || [], palette)
 
     const yaw = THREE.MathUtils.degToRad(data.yaw || 0)
     steve.rotation.y = -yaw
