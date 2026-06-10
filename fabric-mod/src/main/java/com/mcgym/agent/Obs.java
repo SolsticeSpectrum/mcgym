@@ -20,9 +20,9 @@ public final class Obs {
 
     public static final int    RADIUS = 8;
     public static final int    EDGE   = 17;
-    public static final int    COUNT  = 4913;  // 17^3
-    public static final int    STRIDE = 4;     // far shell samples every 4th block
-    public static final int    SLOTS  = 41;    // 36 main + 4 armor + 1 offhand
+    public static final int    COUNT  = 4913; // 17^3
+    public static final int    STRIDE = 4;    // far shell samples every 4th block
+    public static final int    SLOTS  = 41;   // 36 main + 4 armor + 1 offhand
     public static final double REACH  = 4.5;
 
     public final int[]   voxel    = new int[COUNT];
@@ -70,7 +70,7 @@ public final class Obs {
 
         boolean aimed = false;
         float    dist = 0.0f;
-        int      face = 255;  // sentinel, no face
+        int      face = 255; // sentinel, no face
         target        = 0;
 
         HitResult hit = player.raycast(reach, 1.0f, false);

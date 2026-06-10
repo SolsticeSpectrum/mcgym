@@ -45,6 +45,7 @@ impl Transport {
             .truncate(true)
             .open(shm_path)?;
         file.set_len(total as u64)?;
+
         // SAFETY: we own the file and keep it mapped for the transport's lifetime
         let mut mmap = unsafe { MmapMut::map_mut(&file)? };
 
@@ -97,6 +98,7 @@ impl Transport {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
                     return Ok(()); // driver hung up
                 }
+                
                 return Err(e);
             }
 

@@ -108,7 +108,7 @@ impl<'a> LeWriter<'a> {
         self.pos += b.len();
     }
 
-    #[inline] fn u8(&mut self, v: u8)   { self.bytes(&[v]); }
+    #[inline] fn  u8(&mut self, v:  u8) { self.bytes(&[v]); }
     #[inline] fn i16(&mut self, v: i16) { self.bytes(&v.to_le_bytes()); }
     #[inline] fn i32(&mut self, v: i32) { self.bytes(&v.to_le_bytes()); }
     #[inline] fn i64(&mut self, v: i64) { self.bytes(&v.to_le_bytes()); }
@@ -133,7 +133,7 @@ impl<'a> LeReader<'a> {
         s
     }
 
-    #[inline] fn u8(&mut self)  -> u8  { self.take(1)[0] }
+    #[inline] fn  u8(&mut self)  -> u8 { self.take(1)[0] }
     #[inline] fn i16(&mut self) -> i16 { i16::from_le_bytes(self.take(2).try_into().unwrap()) }
     #[inline] fn i32(&mut self) -> i32 { i32::from_le_bytes(self.take(4).try_into().unwrap()) }
     #[inline] fn i64(&mut self) -> i64 { i64::from_le_bytes(self.take(8).try_into().unwrap()) }
@@ -145,12 +145,14 @@ impl Obs {
         assert_eq!(dst.len(), OBS_NBYTES, "obs dst wrong size");
         assert_eq!(self.voxel_blocks.len(), VOXEL_CELLS, "voxel_blocks len");
         assert_eq!(self.voxel_far.len(), VOXEL_CELLS, "voxel_far len");
+
         let mut w = LeWriter::new(dst);
         w.i32(self.schema_version);
         w.i64(self.tick);
         w.i32(self.agent_id);
         for v in self.pos { w.f32(v); }
         for v in self.vel { w.f32(v); }
+
         w.f32(self.yaw);
         w.f32(self.pitch);
         w.u8(self.on_ground);
@@ -159,6 +161,7 @@ impl Obs {
         w.u8(self.selected_slot);
         for &v in &self.voxel_blocks { w.i32(v); }
         for &v in &self.voxel_far    { w.i32(v); }
+
         w.i32(self.target_block);
         w.u8(self.target_face);
         w.f32(self.target_distance);
@@ -171,6 +174,7 @@ impl Obs {
         for v in self.entity_flags     { w.u8(v);  }
         for v in self.inv_item_id      { w.i32(v); }
         for v in self.inv_count        { w.u8(v);  }
+
         debug_assert_eq!(w.pos, OBS_NBYTES);
     }
 
@@ -182,6 +186,7 @@ impl Obs {
 
     pub fn decode(src: &[u8]) -> Self {
         assert_eq!(src.len(), OBS_NBYTES, "obs src wrong size");
+
         let mut r = LeReader::new(src);
         let mut o = Self::default();
         o.schema_version  = r.i32();
@@ -197,6 +202,7 @@ impl Obs {
         o.selected_slot   = r.u8();
         for c in o.voxel_blocks.iter_mut() { *c = r.i32(); }
         for c in o.voxel_far.iter_mut()    { *c = r.i32(); }
+
         o.target_block    = r.i32();
         o.target_face     = r.u8();
         o.target_distance = r.f32();
@@ -209,6 +215,7 @@ impl Obs {
         for c in o.entity_flags.iter_mut()     { *c = r.u8();  }
         for c in o.inv_item_id.iter_mut()      { *c = r.i32(); }
         for c in o.inv_count.iter_mut()        { *c = r.u8();  }
+
         debug_assert_eq!(r.pos, OBS_NBYTES);
         o
     }

@@ -1,4 +1,4 @@
-"""Gather wood task, dense shaping toward finding and mining logs"""
+"""gather wood task, dense shaping toward finding and mining logs"""
 from __future__ import annotations
 
 import numpy as np
@@ -8,7 +8,6 @@ from mcgym.schema.registry import Registry
 
 from .task import Task
 
-# vanilla wood families, mushroom_stem ends in _stem but is fungus not wood
 SUFFIXES = ("_log", "_wood", "_stem", "_hyphae")
 EXCLUDED = frozenset({"minecraft:mushroom_stem"})
 
@@ -27,7 +26,7 @@ W_FACE     = 0.05    # looking at an in range log
 W_ATTACK   = 0.15    # attacking an in range log, sustained mining
 W_ANYITEM  = 0.2     # delta total inventory, bootstraps pick something up
 W_DEATH    = 10.0    # death penalty, real signal not engineered away
-# CAPS style action rate shaping (arXiv 2012.06644), jerk punishes camera reversals,
+# caps style action rate shaping (arxiv 2012.06644), jerk punishes camera reversals,
 # vel curbs endless spinning, jump curbs random hopping
 W_CAMERA   = 0.0006
 W_JERK     = 0.002
@@ -56,7 +55,7 @@ def log_block_ids(registry: Registry) -> set[int]:
 
 
 class Wood(Task):
-    """Vectorized over all N agents, prev trackers are (N,) arrays"""
+    """vectorized over all N agents, prev trackers are (N,) arrays"""
 
     name  = "wood"
     eplen = 256
@@ -138,6 +137,7 @@ class Wood(Task):
         pitch = CAM[act[:, 5]]
         jerk  = np.abs(yaw - self._yaw) + np.abs(pitch - self._pitch)
         vel   = np.abs(yaw) + np.abs(pitch)
+        
         r = r - W_CAMERA * vel - W_JERK * jerk - W_JUMP * act[:, 2]
 
         # zero the respawn frame, its cross episode delta is spurious, then

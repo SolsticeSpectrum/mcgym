@@ -285,6 +285,7 @@ impl Gym for GymState {
         self.tick += 1;
         for i in 0..self.n {
             let a = Action::decode(&actions[i * ACTION_NBYTES..(i + 1) * ACTION_NBYTES]);
+            
             // re-probe/generate the neighbourhood only when the agent crosses a chunk boundary
             let bp = self.agents[i].block_pos();
             let cc = (bp[0] >> 4, bp[2] >> 4);
@@ -292,11 +293,14 @@ impl Gym for GymState {
                 Self::ensure_around_chunk(&mut self.world, cc.0, cc.1);
                 self.last_chunk[i] = cc;
             }
+
             self.agents[i].step(&self.world, &a);
+
             // disjoint borrows, agent world reg
             let broke = mine_step(&mut self.agents[i], &mut self.world, &self.reg, &a).is_some();
             self.update_and_relocate(i, broke);
         }
+
         // drop chunks no agent is near, bounds memory over long roaming runs
         if self.tick % 256 == 0 {
             let centers: Vec<(i32, i32)> = self.agents.iter().map(|ag| {
@@ -305,6 +309,7 @@ impl Gym for GymState {
             }).collect();
             self.world.retain_chunks_near(&centers, CHUNK_RADIUS + 2);
         }
+
         self.write_all_obs(obs);
     }
 }

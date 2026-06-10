@@ -43,7 +43,7 @@ def test_transport_round_trip():
     agents   = 2
     seed     = 0
     registry = Registry.load(REGISTRY)
-    air_id   = registry.id_of("minecraft:air")
+    air_id   = registry.block_id_of("minecraft:air")
     
     assert air_id == 0
 
