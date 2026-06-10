@@ -9,7 +9,9 @@ function get() {
   const renderer = new THREE.WebGLRenderer({ antialias: true })
   const handles = createVoxelScene()
   const povCam = new THREE.PerspectiveCamera(75, 1.5, 0.05, 500)
-  const topCam = new THREE.OrthographicCamera(-9, 9, 9, -9, 0.1, 500)
+  // Match the 17-cell grid extent (cells -8..8, cubes +/-0.5 -> +/-8.5) so the terrain fills the
+  // square with no padding.
+  const topCam = new THREE.OrthographicCamera(-8.5, 8.5, 8.5, -8.5, 0.1, 500)
   topCam.position.set(0, 30, 0)
   topCam.up.set(0, 0, -1)
   topCam.lookAt(0, 0, 0)
