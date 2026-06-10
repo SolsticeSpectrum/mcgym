@@ -1,4 +1,4 @@
-"""Shm + unix socket client for the gym, one byte command one byte reply"""
+"""shm + unix socket client for the gym, one byte command one byte reply"""
 from __future__ import annotations
 
 import socket

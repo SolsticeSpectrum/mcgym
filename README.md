@@ -33,7 +33,7 @@ MCGYM=../mcgym/target/release/mcgym .venv/bin/python -m mcgym.train --task wood 
 The monitor at http://localhost:9080 shows every agent live, per env minimaps,
  `trainer/scripts/train_box.sh` carries the tuned big gpu config.
 
-## Run a policy in the real game
+## Run a policy
 
 ```bash
 .venv/bin/python export_ckpt.py runs/wood weights/wood.onnx
