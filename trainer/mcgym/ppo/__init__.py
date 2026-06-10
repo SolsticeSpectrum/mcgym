@@ -1,4 +1,4 @@
-"""PPO rollout buffer and learner."""
+"""ppo rollout buffer and learner."""
 from .buffer import Buffer
 from .learner import Learner
 

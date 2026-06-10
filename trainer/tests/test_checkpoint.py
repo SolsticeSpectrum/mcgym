@@ -1,4 +1,4 @@
-"""Checkpoint save/load + keep-N retention (fast, CPU)."""
+"""checkpoint save/load and keep n retention, fast cpu only."""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,4 @@
-"""PPO unit tests: hand-checkable GAE and a synthetic bandit that must learn."""
+"""ppo unit tests, hand checkable gae and a synthetic bandit that must learn."""
 from __future__ import annotations
 
 import numpy as np
@@ -12,8 +12,7 @@ from mcgym.ppo.learner import Learner
 
 
 def test_compute_gae_manual():
-    # T=3, N=1, no terminals. gamma=1.0, lam=1.0 makes GAE the plain
-    # discounted-return-minus-value, easy to check by hand.
+    # gamma 1 lam 1 makes gae plain discounted return minus value, easy by hand
     buf = Buffer(rollout=3, agents=1)
     rewards = [1.0, 2.0, 3.0]
     values = [0.5, 0.5, 0.5]
@@ -26,11 +25,10 @@ def test_compute_gae_manual():
     last_value = 0.0
     adv, ret = buf.gae(np.array([last_value]), gamma=1.0, lam=1.0)
 
-    # delta_t = r_t + V(t+1) - V(t); gae_t = delta_t + gae_{t+1}
-    # V(3)=last_value=0.
-    d2 = 3.0 + 0.0 - 0.5  # 2.5
-    d1 = 2.0 + 0.5 - 0.5  # 2.0
-    d0 = 1.0 + 0.5 - 0.5  # 1.0
+    # delta_t = r_t + V(t+1) - V(t), gae_t = delta_t + gae_{t+1}, V(3) = 0
+    d2 = 3.0 + 0.0 - 0.5
+    d1 = 2.0 + 0.5 - 0.5
+    d0 = 1.0 + 0.5 - 0.5
     a2 = d2
     a1 = d1 + a2
     a0 = d0 + a1
@@ -39,7 +37,7 @@ def test_compute_gae_manual():
 
 
 def test_compute_gae_with_terminal():
-    # A terminal at t=1 must cut the bootstrap from t=2.
+    # terminal at t=1 must cut the bootstrap from t=2
     buf = Buffer(rollout=3, agents=1)
     buf.reward[:, 0] = [1.0, 1.0, 1.0]
     buf.value[:, 0] = [0.0, 0.0, 0.0]
@@ -47,17 +45,16 @@ def test_compute_gae_with_terminal():
     buf._t = 3
     adv, _ = buf.gae(np.array([0.0]), gamma=0.99, lam=0.95)
 
-    # t=2: delta = 1 + 0.99*0 - 0 = 1; gae2 = 1
-    # t=1 done -> nonterminal=0: delta = 1; gae1 = 1
-    # t=0: nonterminal=1: delta=1 + 0.99*0; gae0 = 1 + 0.99*0.95*gae1 = 1+0.9405
+    # t=2 delta = 1, gae2 = 1
+    # t=1 done so nonterminal 0, delta = 1, gae1 = 1
+    # t=0 gae0 = 1 + 0.99*0.95*gae1
     assert np.allclose(adv[2], 1.0)
     assert np.allclose(adv[1], 1.0)
     assert np.allclose(adv[0], 1.0 + 0.99 * 0.95 * 1.0)
 
 
-class _MultiDiscretePolicy(nn.Module):
-    """Minimal flat-obs actor-critic with the same multi-discrete interface
-    (get_action/evaluate) as the real ActorCritic, for the bandit test."""
+class _Policy(nn.Module):
+    """minimal flat obs actor critic with the real multi discrete interface."""
 
     def __init__(self, obs_dim=1):
         super().__init__()
@@ -90,9 +87,8 @@ class _MultiDiscretePolicy(nn.Module):
         return lp, ent, value
 
 
-class _FlatBuffer(Buffer):
-    """Buffer variant storing a flat float obs tensor instead of OBS_DTYPE
-    structured records, so the bandit test needs no Minecraft schema."""
+class _FlatBuf(Buffer):
+    """buffer storing flat float obs instead of OBS_DTYPE records, no minecraft schema needed."""
 
     def __init__(self, rollout, agents, obs_dim):
         super().__init__(rollout, agents)
@@ -115,7 +111,6 @@ class _FlatBuffer(Buffer):
         flat = self.flat.reshape(-1, self.obs_dim)
         actions = self.act.reshape(-1, self.n_heads)
         logp = self.logprob.reshape(-1)
-        val = self.value.reshape(-1)
         total = self.T * self.N
         order = np.random.permutation(total)
         for s in range(0, total, batch_size):
@@ -126,7 +121,6 @@ class _FlatBuffer(Buffer):
                 torch.from_numpy(logp[mb]).to(device),
                 torch.from_numpy(self.advantages[mb]).to(device),
                 torch.from_numpy(self.returns[mb]).to(device),
-                torch.from_numpy(val[mb]).to(device),
             )
 
 
@@ -137,7 +131,7 @@ def test_bandit_learns():
     agents = 16
     rollout = 16
     obs_dim = 1
-    model = _MultiDiscretePolicy(obs_dim)
+    model = _Policy(obs_dim)
     learner = Learner(
         model, lr=3e-3, ent_coef=0.0, epochs=4, minibatch=64, device="cpu"
     )
@@ -149,10 +143,10 @@ def test_bandit_learns():
             idx, _, _ = model.get_action(torch.from_numpy(obs_const))
         return float((idx[:, 0].numpy() == 2).mean())
 
-    start_reward = np.mean([mean_reward() for _ in range(20)])
+    start_rew = np.mean([mean_reward() for _ in range(20)])
 
     for _ in range(60):
-        buf = _FlatBuffer(rollout, agents, obs_dim)
+        buf = _FlatBuf(rollout, agents, obs_dim)
         for _ in range(rollout):
             obs_t = torch.from_numpy(obs_const)
             with torch.no_grad():
@@ -164,13 +158,13 @@ def test_bandit_learns():
                 lp.numpy(),
                 reward,
                 val.numpy(),
-                np.ones(agents),  # bandit: every step terminal
+                np.ones(agents),  # bandit, every step terminal
             )
         with torch.no_grad():
             last_v = model.get_action(torch.from_numpy(obs_const))[2].numpy()
         buf.gae(last_v, gamma=0.99, lam=0.95)
         learner.update(buf)
 
-    final_reward = np.mean([mean_reward() for _ in range(50)])
-    assert start_reward < 0.6, f"start already high: {start_reward}"
-    assert final_reward > 0.8, f"bandit did not learn: {final_reward}"
+    final_rew = np.mean([mean_reward() for _ in range(50)])
+    assert start_rew < 0.6, f"start already high: {start_rew}"
+    assert final_rew > 0.8, f"bandit did not learn: {final_rew}"

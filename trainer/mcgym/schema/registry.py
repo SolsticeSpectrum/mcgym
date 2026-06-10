@@ -1,13 +1,4 @@
-"""ID <-> name registry for blocks and items.
-
-Blocks and items live in SEPARATE id spaces on the Java side
-(BuiltInRegistries.BLOCK vs BuiltInRegistries.ITEM): the same name can map to a
-different integer in each table (e.g. ``minecraft:oak_log`` is block id 49 but
-item id 134). The voxel grid and ``target_block`` carry BLOCK ids; the inventory
-``inv_item_id`` carries ITEM ids. We therefore keep both maps and expose them
-separately via ``block_id_of``/``item_id_of`` (and the legacy ``id_of`` which
-resolves against an items-over-blocks merge for backwards compatibility).
-"""
+"""id to name registry for blocks and items."""
 from __future__ import annotations
 
 import json
@@ -15,11 +6,14 @@ import pathlib
 from dataclasses import dataclass
 
 
+# blocks and items are separate id spaces on the java side, same name can map to
+# different ints (oak_log is block 49 but item 134). voxels and target_block carry
+# block ids, inventory carries item ids
 @dataclass
 class Registry:
     _block_to_id: dict[str, int]
     _item_to_id: dict[str, int]
-    # Merged (items override blocks); kept so legacy id_of/name_of/size still work.
+    # merged items over blocks, kept for legacy id_of/name_of/size
     _name_to_id: dict[str, int]
     _id_to_name: dict[int, str]
 
@@ -36,7 +30,6 @@ class Registry:
         id_to_name = {v: k for k, v in merged.items()}
         return cls(blocks, items, merged, id_to_name)
 
-    # --- separate id spaces -------------------------------------------------
     def block_id_of(self, name: str) -> int:
         return self._block_to_id[name]
 
@@ -49,7 +42,7 @@ class Registry:
     def item_ids(self) -> dict[str, int]:
         return dict(self._item_to_id)
 
-    # --- legacy merged view -------------------------------------------------
+    # legacy merged view
     def id_of(self, name: str) -> int:
         return self._name_to_id[name]
 

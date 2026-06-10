@@ -1,4 +1,4 @@
-"""Wood task unit tests, synthetic observations, no gym."""
+"""wood task unit tests, synthetic observations, no gym."""
 from __future__ import annotations
 
 import pathlib

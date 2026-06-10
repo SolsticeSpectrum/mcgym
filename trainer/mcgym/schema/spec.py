@@ -1,8 +1,4 @@
-"""Parses schema/mcai_schema.yaml into packed little-endian NumPy dtypes.
-
-The dtypes produced here ARE the canonical wire format and shared-memory layout.
-Any other language implementation (Java gym, Fabric mod) must reproduce these bytes.
-"""
+"""parse schema/mcai_schema.yaml into packed little endian dtypes, the canonical wire format."""
 import pathlib
 
 import numpy as np
@@ -26,7 +22,7 @@ def _build_dtype(fields):
         shape = f.get("shape")
         formats.append((base, tuple(shape)) if shape else base)
         names.append(f["name"])
-    # align=False -> tightly packed, no padding between fields.
+    # align false keeps fields tightly packed
     return np.dtype({"names": names, "formats": formats}, align=False)
 
 
