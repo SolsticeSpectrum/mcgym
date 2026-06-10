@@ -29,10 +29,10 @@ public final class ObservationBuilder {
     public static final int INV_SLOTS = 41;             // 36 main + 4 armor + 1 offhand
     public static final double DEFAULT_BLOCK_REACH = 4.5;
 
-    public final long[] voxel = new long[VOXEL_COUNT];
-    public final long[] voxelFar = new long[VOXEL_COUNT];
+    public final int[] voxel = new int[VOXEL_COUNT];
+    public final int[] voxelFar = new int[VOXEL_COUNT];
     public final float[] scalars = new float[OnnxPolicy.SCALARS];
-    public final long[] invItemId = new long[INV_SLOTS];
+    public final int[] invItemId = new int[INV_SLOTS];
     public final float[] invCount = new float[INV_SLOTS];
 
     /** Block id of the raycast target this build (0 = none/air), for telemetry. */
@@ -52,7 +52,7 @@ public final class ObservationBuilder {
             return;
         }
 
-        // --- 1. Voxel grid (int64[4913]) -----------------------------------
+        // --- 1. Voxel grid (int32[4913]) -----------------------------------
         // center = floor(playerPos), index = ((dy+8)*17 + (dz+8))*17 + (dx+8),
         // loop order dy -> dz -> dx (matches McaiGymRuntime.fillVoxels exactly).
         BlockPos center = BlockPos.ofFloored(player.getX(), player.getY(), player.getZ());
@@ -68,7 +68,7 @@ public final class ObservationBuilder {
             }
         }
 
-        // --- 1b. Far voxel shell (int64[4913]) -----------------------------
+        // --- 1b. Far voxel shell (int32[4913]) -----------------------------
         // Same 17^3 grid sampled at stride VOXEL_FAR_STRIDE (radius 8*4 = 32), the
         // foveated render-distance field (matches McaiGymRuntime.fillVoxels far shell).
         // Unloaded chunks beyond render distance return air client-side, exactly as
@@ -139,7 +139,7 @@ public final class ObservationBuilder {
             scalars[s++] = (targetFace == f) ? 1.0f : 0.0f;
         }
 
-        // --- 4. Inventory (int64 ids[41], float32 counts[41]) --------------
+        // --- 4. Inventory (int32 ids[41], float32 counts[41]) --------------
         // Slot order: main 0..35, armor 36..39 (feet,legs,chest,head), offhand 40.
         // PlayerInventory.getStack uses this combined container indexing.
         PlayerInventory inv = player.getInventory();
