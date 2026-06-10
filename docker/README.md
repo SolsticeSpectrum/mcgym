@@ -1,53 +1,40 @@
 # docker
 
-One compose file, fresh gpu host to running training. Copy this folder to the
-host, fill `.env` from `.env.example`, `docker compose up -d`.
+fresh gpu host to running training. copy this folder, fill `.env` from
+`.env.example`, `docker compose up -d`.
 
-What happens on every up
+every up writes the ssh keys and two supervisord programs into the data dir,
+both run `bootstrap.sh`. ssh is dropbear on 2222 with a persisted host key.
+train installs rust and a cuda torch venv into `/drive2/tools` (first boot
+only), clones the repo, builds the gym and the frontend and trains in an auto
+resume loop. first boot takes 10 to 20 min, later boots resume right away.
 
-1. `mcgym-init` (busybox, exits right away) writes the ssh authorized_keys and
-   two supervisord program configs into the data dir
-2. `xgl` (the selkies desktop image) starts, supervisord picks up the programs,
-   both backed by the single `bootstrap.sh`
-   - ssh, dropbear on 2222, key only, host key persists so clients never see
-     a host key warning
-   - train, installs rustup and a python venv with cuda torch into
-     `/drive2/tools` (first boot only), clones the repo, builds the gym and
-     starts training in an auto resume loop
+- web desktop http://host:8080, user ubuntu, password from `.env`
+- monitor http://host:9080
+- `ssh -p 2222 ubuntu@host`
+- log `/drive2/train.log`
 
-First boot takes 10 to 20 min for toolchains and the gym build, later boots go
-straight to training and resume the latest checkpoint.
+## layout
 
-| what | where |
-|---|---|
-| web desktop | `http://host:8080`, user ubuntu, password from `.env` |
-| training monitor | `http://host:9080` |
-| ssh | `ssh -p 2222 ubuntu@host` |
-| training log | `/drive2/train.log` |
-
-## persistent layout
-
-The container is disposable, only `/drive2` (the `DATA_DIR` mount) survives
+only `/drive2` (the DATA_DIR mount) survives a recreate
 
 ```
-tools/      rustup + cargo + venv + pip cache
-mcai/       repo clone, re cloned on boot, keep no state here
-runs/       checkpoints per task, the valuable part
-xgl-ssh/    dropbear host key + cached debs
+tools/       rustup + cargo + venv + caches
+mcai/        repo clone, re cloned on boot, keep no state here
+runs/        checkpoints per task
+xgl-ssh/     dropbear host key + cached debs
 mcgym-init/  files written by the init service
-train.log   training output
+train.log    training output
 ```
 
 ## quirks
 
-- private repo, embed a github pat in `REPO_URL`, see `.env.example`
+- private repo, put a github pat in REPO_URL
 - host networking, the compose ports section is decorative, port 22 on the
-  host ip is the hosts own sshd not the container
-- the image has no real root, sudo is fakeroot, the bootstrap uses
-  `fakeroot apt-get`, real sudo is `sudo-root` with the container password,
-  openssh sshd cannot run there which is why dropbear
-- resources buy throughput directly, the rollout buffers need ~21 GB at 2048
-  agents and the 32 gyms want a core each, raise `MEM_LIMIT` and `CPUS` if the
-  host has headroom
-- knob changes, edit `.env`, `docker compose up -d`, then
+  host ip is the host vm not the container
+- no real root in the image, sudo is fakeroot, real sudo is sudo-root with
+  the container password, openssh cannot run there hence dropbear
+- rollout buffers need ~21 GB at 2048 agents and 32 gyms want a core each,
+  raise MEM_LIMIT and CPUS if the host has headroom
+- knob change, edit `.env`, `docker compose up -d`, then
   `docker exec xgl supervisorctl restart mcgym-train`
