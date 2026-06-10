@@ -44,6 +44,7 @@ class TrainMonitor:
         # Lightweight columnar snapshot for /state (vectors only — no voxels).
         self._snapshot = {"step": 0, "n_per": self._n_per, "edge": self._edge, "x": []}
         self._latest_obs = None  # ref to the most recent obs batch, for on-demand voxels
+        self._latest_action = None
         self._last_snap = 0.0
         self._server = None
 
@@ -57,8 +58,9 @@ class TrainMonitor:
         return f"http://0.0.0.0:{self.port}/"
 
     def update(self, obs_struct: np.ndarray, action_idx: np.ndarray, reward: np.ndarray, step: int) -> None:
-        # Always keep the latest obs ref (cheap) so /agent can serve any agent's voxel on demand.
+        # Keep the latest obs + action refs (cheap) so /agent can serve any agent on demand.
         self._latest_obs = obs_struct
+        self._latest_action = action_idx
         now = time.monotonic()
         if now - self._last_snap < self._poll_dt:
             return
@@ -95,11 +97,25 @@ class TrainMonitor:
         dz = rem // edge - r
         dx = rem % edge - r
         cells = np.stack([dx, dy, dz, ids], axis=1).astype(int).tolist()
+        # Target block position in voxel-relative block coords, from the look ray + hit distance
+        # (eye is ~1.62 above the feet/centre cell). Lets the client outline the targeted block.
+        yaw_r = np.deg2rad(float(o["yaw"]))
+        pitch_r = np.deg2rad(float(o["pitch"]))
+        cp = np.cos(pitch_r)
+        look = np.array([-np.sin(yaw_r) * cp, -np.sin(pitch_r), np.cos(yaw_r) * cp])
+        dist = float(o["target_distance"])
+        in_range = int(o["target_in_range"])
+        hit = np.array([0.0, 1.62, 0.0]) + look * (dist + 0.5)
+        tpos = [int(np.floor(hit[0])), int(np.floor(hit[1])), int(np.floor(hit[2]))] if in_range else None
+        attacking = 0
+        if self._latest_action is not None and gi < len(self._latest_action):
+            attacking = int(self._latest_action[gi][6] != 0)  # head 6 = attack
         return {
             "env": env, "i": i, "edge": edge,
             "yaw": round(float(o["yaw"]), 1), "pitch": round(float(o["pitch"]), 1),
             "wood": int((np.isin(o["inv_item_id"], self._log_arr) * o["inv_count"]).sum()),
-            "look": int(o["target_in_range"]), "target": int(o["target_block"]),
+            "look": in_range, "target": int(o["target_block"]), "targetPos": tpos,
+            "attacking": attacking,
             "cells": cells,
         }
 
