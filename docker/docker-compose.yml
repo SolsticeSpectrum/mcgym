@@ -1,26 +1,108 @@
-# Convenience compose for the GPU box. Bring up:
-#   SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" docker compose -f docker/docker-compose.yml up -d --build
-# Then:  ssh -p 2222 root@<box>   (and -L 8088:localhost:8088 to view the web monitor)
+# MCAI GPU training box — Selkies desktop + SSH + auto-started wood task.
+#
+# Usage: copy this folder (docker-compose.yml, bootstrap.sh, .env) to the host
+# and `docker compose up -d`. Everything else is automatic:
+#   - mcai-init (busybox, one-shot) writes the supervisord program configs and
+#     the SSH authorized_keys into the persistent data dir on every `up`
+#   - xgl starts; its supervisord picks up two extra programs, both backed by
+#     the single bootstrap.sh: `ssh` (dropbear on :2222) and `train`
+#     (rust/python/torch toolchain into /drive2/tools, git clone of the repo,
+#     cargo build, then the supervised wood task with the monitor on :9080)
+#
+# The container is disposable. Everything that must survive a recreate lives in
+# ${DATA_DIR} (mounted as /drive2): toolchains, the repo clone, checkpoints,
+# the dropbear host key.
 services:
-  mcai:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: mcai-train
-    environment:
-      - SSH_PUBKEY=${SSH_PUBKEY:-}
-      - MCAI_HOME=/workspace/mcai
-    ports:
-      - "2222:22"      # ssh
-      - "8088:8088"    # training web monitor
-    shm_size: "4gb"    # REQUIRED: the gym transport uses /dev/shm (default 64MB is too small)
+  mcai-init:
+    container_name: mcai-init
+    image: busybox
+    restart: "no"
     volumes:
-      - ./runs:/workspace/mcai/trainer/runs   # checkpoints persist on the host (sync home from here)
+    - '${DATA_DIR:-/data/Docker/data}/mcai-init:/opt/init'
+    command:
+    - sh
+    - -c
+    - |
+      set -e
+      # authorized_keys from .env (multiple keys separated by ';')
+      echo '${SSH_PUBLIC_KEYS:?set SSH_PUBLIC_KEYS in docker/.env}' | tr ';' '\n' > /opt/init/authorized_keys
+      # supervisord programs — both run the one bootstrap script in different modes
+      cat > /opt/init/mcai-ssh.conf <<'EOF'
+      [program:mcai-ssh]
+      command=/bin/bash /opt/mcai/bootstrap.sh ssh
+      directory=/home/ubuntu
+      autostart=true
+      autorestart=true
+      priority=1
+      stdout_logfile=/tmp/mcai-ssh.log
+      redirect_stderr=true
+      EOF
+      cat > /opt/init/mcai-train.conf <<'EOF'
+      [program:mcai-train]
+      command=/bin/bash /opt/mcai/bootstrap.sh train
+      directory=/home/ubuntu
+      autostart=true
+      autorestart=true
+      startsecs=30
+      priority=10
+      stdout_logfile=/drive2/train.log
+      redirect_stderr=true
+      environment=REPO_URL="${REPO_URL:?set REPO_URL in docker/.env}",RUN="${RUN:-woodopt}",NUM_ENVS="${NUM_ENVS:-32}",N_AGENTS="${N_AGENTS:-64}",ROLLOUT="${ROLLOUT:-128}",MINIBATCH="${MINIBATCH:-16384}",EPOCHS="${EPOCHS:-2}",COHORTS="${COHORTS:-4}",MODEL_SCALE="${MODEL_SCALE:-3}",MONITOR_PORT="${MONITOR_PORT:-9080}"
+      EOF
+      chmod 600 /opt/init/authorized_keys
+      chown -R 1000:1000 /opt/init
+      echo 'mcai-init: done'
+
+  xgl:
+    container_name: xgl
+    hostname: xgl
+    depends_on:
+      mcai-init:
+        condition: service_completed_successfully
+    image: ghcr.io/selkies-project/nvidia-glx-desktop:latest
+    runtime: nvidia
+    # NOTE: with `network_mode: host`, this ports section is IGNORED — services
+    # listen directly on the host: selkies :8080, training monitor :9080,
+    # dropbear SSH :2222 (port 22 on the host IP is the host VM's own sshd).
+    ports:
+    - '8080:8080'
+    - '9080:9080'
+    - '2222:2222'
+    stdin_open: true
+    tty: true
+    cpus: ${CPUS:-12}
+    mem_limit: ${MEM_LIMIT:-64g}
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: 1            # one RTX 6000 is plenty; set 'all' for both
-              capabilities: [gpu]
-    restart: unless-stopped
+          - driver: nvidia
+            device_ids: ['${GPU_ID:-2}']
+            capabilities: [gpu]
+    tmpfs:
+    - '/dev/shm:rw'
+    volumes:
+    - '${DATA_DIR:-/data/Docker/data}:/drive2'
+    - './bootstrap.sh:/opt/mcai/bootstrap.sh:ro'
+    # files written by mcai-init above
+    - '${DATA_DIR:-/data/Docker/data}/mcai-init:/opt/mcai-init:ro'
+    - '${DATA_DIR:-/data/Docker/data}/mcai-init/mcai-ssh.conf:/etc/supervisor/conf.d/mcai-ssh.conf:ro'
+    - '${DATA_DIR:-/data/Docker/data}/mcai-init/mcai-train.conf:/etc/supervisor/conf.d/mcai-train.conf:ro'
+    network_mode: 'host'
+    environment:
+    - TZ=UTC
+    - DISPLAY_SIZEW=1920
+    - DISPLAY_SIZEH=1080
+    - DISPLAY_REFRESH=60
+    - DISPLAY_DPI=96
+    - DISPLAY_CDEPTH=24
+    - VIDEO_PORT=DFP
+    # Container user password (also the `sudo-root` password inside)
+    - PASSWD=${PASSWD:?set PASSWD in docker/.env}
+    - SELKIES_ENCODER=nvh264enc
+    - SELKIES_ENABLE_RESIZE=false
+    - SELKIES_VIDEO_BITRATE=30000
+    - SELKIES_FRAMERATE=60
+    - SELKIES_AUDIO_BITRATE=128000
+    - SELKIES_ENABLE_BASIC_AUTH=true
+    - SELKIES_ENABLE_HTTPS=false

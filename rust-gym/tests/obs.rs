@@ -1,0 +1,50 @@
+//! Voxel extraction must read real terrain with correct ordering + registry mapping: the grid
+//! centre cell equals the block the agent stands in, and a tree's logs land in the grid.
+
+use mcai_gym::obs::{center_index, fill_voxels};
+use mcai_gym::registry::Registry;
+use mcai_gym::schema::VOXEL_CELLS;
+use mcai_gym::world::World;
+use pumpkin_data::Block;
+
+#[test]
+fn voxel_center_matches_world_and_finds_logs() {
+    let reg = Registry::load();
+    let mut world = World::new(42);
+    // Generate a forested area (features stage -> trees).
+    for cx in 0..4 {
+        for cz in 0..4 {
+            world.ensure_chunk(cx, cz);
+        }
+    }
+
+    // Find any log block in the generated area.
+    let mut log_pos = None;
+    'scan: for x in 0..64 {
+        for z in 0..64 {
+            for y in world.bottom_y()..world.top_y() {
+                if let Some(id) = world.block_state_raw(x, y, z) {
+                    if Block::from_state_id(id).name.ends_with("_log") {
+                        log_pos = Some((x, y, z, reg.block(id)));
+                        break 'scan;
+                    }
+                }
+            }
+        }
+    }
+    let (lx, ly, lz, log_id) = log_pos.expect("a forest area should contain at least one log");
+    assert!(log_id > 0, "log should map to a real registry id");
+
+    // Centre the near grid on that log; the centre cell must be exactly that block.
+    let mut grid = vec![0i32; VOXEL_CELLS];
+    fill_voxels(&world, &reg, lx, ly, lz, 1, &mut grid);
+    assert_eq!(
+        grid[center_index()],
+        log_id,
+        "voxel centre cell must equal the block at the agent's position"
+    );
+
+    // And the grid around a tree should contain multiple log cells.
+    let logs_in_grid = grid.iter().filter(|&&v| v == log_id).count();
+    assert!(logs_in_grid >= 2, "expected the trunk to span multiple voxel cells, got {logs_in_grid}");
+}

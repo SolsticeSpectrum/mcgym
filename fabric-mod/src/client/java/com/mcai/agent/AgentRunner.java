@@ -35,6 +35,8 @@ public final class AgentRunner {
     private final ObservationBuilder obs;
     private final McaiInput mcaiInput = new McaiInput();
     private final SchemaRegistry registry;
+    // Block ids of the log species the policy trained on, for the aim diagnostic.
+    private final int[] logBlockIds;
 
     // Saved player input restored on stop. Non-null only while our input is installed.
     private Input prevInput;
@@ -44,6 +46,20 @@ public final class AgentRunner {
         this.policy = policy;
         this.registry = registry;
         this.obs = new ObservationBuilder(registry);
+        this.logBlockIds = new int[]{
+            registry.blockId("minecraft:oak_log"), registry.blockId("minecraft:spruce_log"),
+            registry.blockId("minecraft:birch_log"), registry.blockId("minecraft:jungle_log"),
+            registry.blockId("minecraft:acacia_log"), registry.blockId("minecraft:dark_oak_log"),
+        };
+    }
+
+    private boolean isLogBlock(long id) {
+        for (int b : logBlockIds) {
+            if (id == b) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** One agent step. */
@@ -60,7 +76,7 @@ public final class AgentRunner {
         }
 
         obs.build(mc);
-        float[] logits = policy.run(obs.voxel, obs.scalars, obs.invItemId, obs.invCount);
+        float[] logits = policy.run(obs.voxel, obs.voxelFar, obs.targetBlockId, obs.scalars, obs.invItemId, obs.invCount);
         ActionSpace action = ActionSpace.decode(logits);
 
         applyLook(player, action);
@@ -71,7 +87,9 @@ public final class AgentRunner {
     }
 
     private void applyLook(ClientPlayerEntity player, ActionSpace action) {
-        player.setYaw(player.getYaw() + action.yawDelta);
+        // Faithful actuator: apply exactly the policy's look delta, no assist. (wrapDegrees
+        // just keeps the stored yaw bounded; it does not change the obs, which uses sin/cos.)
+        player.setYaw(MathHelper.wrapDegrees(player.getYaw() + action.yawDelta));
         player.setPitch(MathHelper.clamp(player.getPitch() + action.pitchDelta, -90.0f, 90.0f));
     }
 
@@ -133,6 +151,38 @@ public final class AgentRunner {
         boolean targetInRange = obs.scalars[11] != 0.0f;
         float targetDistance = obs.scalars[10] * 8.0f;
         int targetBlock = obs.targetBlockId;
+
+        // --- Aim diagnostic: bearing to the nearest log in the near voxel grid vs
+        // where the agent is actually facing. If this error is consistently nonzero
+        // when the agent "wants" to mine, the obs->action translation is miscalibrated;
+        // if it's near zero (and it still misses), the gap is elsewhere.
+        int E = ObservationBuilder.VOXEL_EDGE, R = ObservationBuilder.VOXEL_RADIUS;
+        int bestDx = 0, bestDy = 0, bestDz = 0, bestSq = Integer.MAX_VALUE;
+        boolean foundLog = false;
+        for (int idx = 0; idx < obs.voxel.length; idx++) {
+            if (!isLogBlock(obs.voxel[idx])) {
+                continue;
+            }
+            int dx = (idx % E) - R;
+            int rem = idx / E;
+            int dz = (rem % E) - R;
+            int dy = (rem / E) - R;
+            int sq = dx * dx + dz * dz;
+            if (sq < bestSq) {
+                bestSq = sq; bestDx = dx; bestDy = dy; bestDz = dz; foundLog = true;
+            }
+        }
+        String aim = "no-log-in-grid";
+        if (foundLog) {
+            double cx = Math.floor(player.getX()), cz = Math.floor(player.getZ());
+            double vx = (cx + bestDx + 0.5) - player.getX();
+            double vz = (cz + bestDz + 0.5) - player.getZ();
+            double desiredYaw = Math.toDegrees(Math.atan2(-vx, vz));
+            double yawErr = MathHelper.wrapDegrees((float) (desiredYaw - player.getYaw()));
+            aim = String.format("nearestLog d=%d,%d,%d desiredYaw=%.1f curYaw=%.1f yawErr=%.1f",
+                bestDx, bestDy, bestDz, desiredYaw, MathHelper.wrapDegrees(player.getYaw()), yawErr);
+        }
+        LOG.info("[mcai-aim] {}", aim);
 
         // Wood count = sum of inventory counts whose item id is a known log.
         int woodCount = 0;

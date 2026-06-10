@@ -211,6 +211,14 @@ class BatchWoodReward:
         self.n = n_agents
         self._item_arr = np.array(sorted(log_item_ids_), dtype=np.int64)
         self._block_arr = np.array(sorted(log_block_ids_), dtype=np.int64)
+        # Boolean lookup tables (id -> is_log): a fancy-index gather is far cheaper than np.isin's
+        # search over the two 4913-cell voxel grids every step. Sized above the registry id range;
+        # clip handles the legit-mode -1 sentinel and any out-of-range id (-> air, not a log).
+        self._lut_size = 4096
+        self._is_log_block = np.zeros(self._lut_size, dtype=bool)
+        self._is_log_block[self._block_arr[self._block_arr < self._lut_size]] = True
+        self._is_log_item = np.zeros(self._lut_size, dtype=bool)
+        self._is_log_item[self._item_arr[self._item_arr < self._lut_size]] = True
         edge = _EDGE
         r = (edge - 1) // 2
         cell = np.empty(edge * edge * edge, dtype=np.float32)
@@ -227,18 +235,19 @@ class BatchWoodReward:
         self._prev_total = None
 
     def _wood(self, obs):
-        return (np.isin(obs["inv_item_id"], self._item_arr) * obs["inv_count"]).sum(axis=1).astype(np.float32)
+        ids = np.clip(obs["inv_item_id"], 0, self._lut_size - 1)
+        return (self._is_log_item[ids] * obs["inv_count"]).sum(axis=1).astype(np.float32)
 
     def _total(self, obs):
         ct = obs["inv_count"].astype(np.int64)
         return ((obs["inv_item_id"] != 0) * ct).sum(axis=1).astype(np.float32)
 
     def _nearest(self, obs):
-        mask = np.isin(obs["voxel_blocks"], self._block_arr)
+        mask = self._is_log_block[np.clip(obs["voxel_blocks"], 0, self._lut_size - 1)]
         return np.where(mask, self._cell_dist[None, :], NO_LOG_DIST).min(axis=1).astype(np.float32)
 
     def _nearest_far(self, obs):
-        mask = np.isin(obs["voxel_far"], self._block_arr)
+        mask = self._is_log_block[np.clip(obs["voxel_far"], 0, self._lut_size - 1)]
         return np.where(mask, self._far_cell_dist[None, :], NO_LOG_DIST_FAR).min(axis=1).astype(np.float32)
 
     def reset(self, obs) -> None:

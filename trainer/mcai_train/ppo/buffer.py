@@ -67,26 +67,43 @@ class RolloutBuffer:
         self.returns = returns.reshape(-1)
         return self.advantages, self.returns
 
-    def iter_minibatches(self, batch_size: int, device):
-        """Yield shuffled minibatches of (obs_tensors, action_idx, old_logprob,
-        advantages, returns, old_value), each re-encoded onto ``device``."""
+    def to_device(self, device) -> dict:
+        """Encode the whole rollout to device tensors ONCE for an update.
+
+        The CPU-side strided gather out of the structured obs array + the H2D upload is the
+        expensive part (~GBs); epochs only need a fresh shuffle, so the learner encodes once
+        and passes the result to iter_minibatches for every epoch.
+        """
         from mcai_train.models.policy import obs_to_tensors
 
-        flat_obs = self.obs.reshape(-1)
-        flat_actions = self.action_idx.reshape(-1, self.n_heads)
-        flat_logprob = self.logprob.reshape(-1)
-        flat_value = self.value.reshape(-1)
-        total = self.T * self.N
+        return {
+            "obs": obs_to_tensors(self.obs.reshape(-1), device),  # dict of (total, ...) tensors
+            "actions": torch.from_numpy(self.action_idx.reshape(-1, self.n_heads)).to(device),
+            "logprob": torch.from_numpy(self.logprob.reshape(-1)).to(device),
+            "adv": torch.from_numpy(self.advantages).to(device),
+            "ret": torch.from_numpy(self.returns).to(device),
+            "value": torch.from_numpy(self.value.reshape(-1)).to(device),
+            "total": self.T * self.N,
+        }
 
-        order = np.random.permutation(total)
-        for start in range(0, total, batch_size):
+    def iter_minibatches(self, batch_size: int, device, data: dict | None = None):
+        """Yield shuffled minibatches of (obs_tensors, action_idx, old_logprob,
+        advantages, returns, old_value).
+
+        Pass ``data`` (from to_device) to reuse one encode across all epochs; otherwise this
+        encodes the rollout itself. Minibatch gathers are cheap on-device indexing either way.
+        """
+        if data is None:
+            data = self.to_device(device)
+
+        order = torch.randperm(data["total"], device=device)
+        for start in range(0, data["total"], batch_size):
             mb = order[start : start + batch_size]
-            obs_tensors = obs_to_tensors(flat_obs[mb], device)
             yield (
-                obs_tensors,
-                torch.from_numpy(flat_actions[mb]).to(device),
-                torch.from_numpy(flat_logprob[mb]).to(device),
-                torch.from_numpy(self.advantages[mb]).to(device),
-                torch.from_numpy(self.returns[mb]).to(device),
-                torch.from_numpy(flat_value[mb]).to(device),
+                {k: v[mb] for k, v in data["obs"].items()},
+                data["actions"][mb],
+                data["logprob"][mb],
+                data["adv"][mb],
+                data["ret"][mb],
+                data["value"][mb],
             )

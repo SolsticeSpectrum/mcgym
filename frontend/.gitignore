@@ -1,0 +1,4 @@
+# dist/ is committed on purpose: the box serves it via the training monitor and
+# has no node toolchain — `npm run build` locally and commit the result.
+node_modules/
+*.local
