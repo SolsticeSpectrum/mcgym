@@ -20,10 +20,11 @@ path = "src/main.rs"
 memmap2 = "0.9"
 # Pumpkin's vanilla world simulation (worldgen, chunks, blocks, lighting). Only the
 # sim crates — never the `pumpkin` server binary (networking/commands/plugins).
-# Path deps into the local clone for now; pinned git-dep/vendor follows for reproducibility.
-pumpkin-world = { path = "../reference/pumpkin/pumpkin-world" }
-pumpkin-data = { path = "../reference/pumpkin/pumpkin-data" }
-pumpkin-util = { path = "../reference/pumpkin/pumpkin-util" }
+# Pinned to the same rev as the reference/pumpkin clone so a bare `git clone` of
+# this repo builds anywhere (no local reference checkout needed).
+pumpkin-world = { git = "https://github.com/Pumpkin-MC/Pumpkin", rev = "7bff068dff2f878fa2c7bfebb3bda97ddc17eb36" }
+pumpkin-data = { git = "https://github.com/Pumpkin-MC/Pumpkin", rev = "7bff068dff2f878fa2c7bfebb3bda97ddc17eb36" }
+pumpkin-util = { git = "https://github.com/Pumpkin-MC/Pumpkin", rev = "7bff068dff2f878fa2c7bfebb3bda97ddc17eb36" }
 serde_json = "1"
 
 [dev-dependencies]

@@ -24,3 +24,6 @@ schema/codegen/_generated/
 
 # Rust build artifacts
 target/
+
+# Box secrets (docker/.env.example is the committed template)
+docker/.env
