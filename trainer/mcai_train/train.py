@@ -86,6 +86,9 @@ def resolve_device(arg: str) -> str:
 
 def train(args: argparse.Namespace) -> None:
     device = resolve_device(args.device)
+    # TF32 for fp32 matmuls/convs (tensor cores at fp32 interface, ~1e-3 relative precision —
+    # fine for policy nets). Speeds the eager fp32 collect forward and any non-autocast math.
+    torch.set_float32_matmul_precision("high")
     ckpt_dir = args.checkpoint_dir or f"runs/{args.run_name}"
 
     registry = Registry.load(REGISTRY_PATH)
