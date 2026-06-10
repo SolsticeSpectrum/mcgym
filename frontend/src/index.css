@@ -1,0 +1,33 @@
+body { margin: 0; background: #0b0e14; color: #cdd6f4; font: 14px system-ui }
+a { color: #89b4fa; text-decoration: none }
+canvas { display: block }
+
+.head { height: 44px; padding: 0 16px; border-bottom: 1px solid #1e2230;
+        display: flex; gap: 18px; align-items: center }
+.dim  { color: #9aa4bf }
+
+.grid { padding: 16px; display: grid; gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) }
+.card { background: #11151f; border: 1px solid #1e2230; border-radius: 8px;
+        padding: 8px; cursor: pointer }
+.card .meta { margin-top: 6px; display: flex; justify-content: space-between; font-size: 12px }
+
+.agents { padding: 14px; display: grid; gap: 12px;
+          grid-template-columns: repeat(auto-fill, 250px) }
+.agents .card { padding: 0; overflow: hidden }
+.agents .meta { padding: 4px 8px }
+
+.views { display: flex }
+.views .pov { position: relative; border-right: 1px solid #1e2230 }
+.tint { position: absolute; inset: 0; pointer-events: none }
+
+.full { position: relative; height: calc(100vh - 44px) }
+.info { position: absolute; top: 10px; left: 10px; padding: 6px 10px;
+        background: #0d1018cc; border-radius: 6px }
+.mini { position: absolute; background: #0d1018ee; border: 1px solid #2a3040;
+        border-radius: 8px; overflow: hidden; user-select: none; box-shadow: 0 4px 16px #0008 }
+.mini .bar { cursor: move; padding: 3px 8px; font-size: 11px; color: #9aa4bf;
+             background: #161b27; display: flex; justify-content: space-between }
+.mini .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize;
+              background: linear-gradient(135deg, transparent 45%, #5b6378 45%, #5b6378 70%, transparent 70%) }
+.hint { position: absolute; bottom: 8px; left: 10px; color: #6b7390; font-size: 12px }

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/components/map.tsx","./src/components/views.tsx","./src/pages/agent.tsx","./src/pages/env.tsx","./src/pages/envs.tsx","./src/render/mini.ts","./src/render/scene.ts","./src/render/sticky.ts"],"version":"5.9.3"}
