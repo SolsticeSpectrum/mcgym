@@ -1,4 +1,4 @@
-//! shm + uds bridge to the python trainer, mirrors trainer's shm_transport.py
+//! shm + uds bridge to the python trainer, mirrors trainer transport.py
 //! mapped file: 64 byte header, ACTION region (python writes), OBS region (gym writes)
 
 use std::fs::OpenOptions;
@@ -32,7 +32,6 @@ pub struct Transport {
     listener:  UnixListener,
     sock_path: PathBuf,
     client:    Option<UnixStream>,
-    n_agents:  usize,
     obs_off:   usize,
 }
 
@@ -68,7 +67,6 @@ impl Transport {
             listener,
             sock_path: sock_path.to_path_buf(),
             client:    None,
-            n_agents,
             obs_off,
         })
     }
@@ -126,10 +124,6 @@ impl Transport {
                 }
             }
         }
-    }
-
-    pub fn n_agents(&self) -> usize {
-        self.n_agents
     }
 }
 

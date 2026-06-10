@@ -1,5 +1,5 @@
-//! Benchmark headless vanilla worldgen + block-read throughput — the two costs that
-//! made the Java gym CPU-bound (~14 TPS/world). Run: `cargo run --release --bin genbench`.
+//! benchmark headless worldgen + block read throughput, the two costs that made the
+//! java gym cpu bound, run: cargo run --release --bin genbench
 
 use std::time::Instant;
 
@@ -7,19 +7,19 @@ use mcgym::world::World;
 use pumpkin_data::Block;
 
 fn main() {
-    let seed = 42i64;
-    let radius_chunks = 8; // 16x16 = 256 chunks ~ a 256-block square
-    let side = radius_chunks * 2;
+    let seed   = 42i64;
+    let radius = 8; // 16x16 = 256 chunks ~ a 256 block square
+    let side   = radius * 2;
 
-    // --- worldgen ---
+    // worldgen
     let mut world = World::new(seed);
     let t0 = Instant::now();
-    for cx in -radius_chunks..radius_chunks {
-        for cz in -radius_chunks..radius_chunks {
+    for cx in -radius..radius {
+        for cz in -radius..radius {
             world.ensure_terrain_chunk(cx, cz);
         }
     }
-    let gen_dt = t0.elapsed();
+    let gen_dt   = t0.elapsed();
     let n_chunks = world.chunk_count();
     println!(
         "gen: {n_chunks} chunks in {:.3}s = {:.0} chunks/s ({:.2} ms/chunk)",
@@ -28,12 +28,12 @@ fn main() {
         gen_dt.as_secs_f64() * 1000.0 / n_chunks as f64,
     );
 
-    // --- full-volume block reads (every block in every generated chunk) ---
-    let (bx0, bx1) = (-radius_chunks * 16, radius_chunks * 16);
-    let (bz0, bz1) = (-radius_chunks * 16, radius_chunks * 16);
-    let (y0, y1) = (world.bottom_y(), world.top_y());
+    // full volume block reads, every block in every generated chunk
+    let (bx0, bx1) = (-radius * 16, radius * 16);
+    let (bz0, bz1) = (-radius * 16, radius * 16);
+    let (y0, y1)   = (world.bottom_y(), world.top_y());
     let mut nonair = 0u64;
-    let mut reads = 0u64;
+    let mut reads  = 0u64;
     let t1 = Instant::now();
     for x in bx0..bx1 {
         for z in bz0..bz1 {
@@ -54,13 +54,13 @@ fn main() {
         reads as f64 / read_dt.as_secs_f64() / 1e6,
     );
 
-    // --- obs-shaped reads: a 17^3 voxel cube per agent, many agents ---
-    let agents = 64;
-    let r = 8i32;
+    // obs shaped reads, a 17^3 voxel cube per agent, many agents
+    let agents   = 64;
+    let r        = 8i32;
     let mut sink = 0u64;
     let t2 = Instant::now();
     for a in 0..agents {
-        // spread sample centers across the generated area, near the surface
+        // spread sample centers across the generated area near the surface
         let cx = bx0 + 8 + (a * 37) % (side * 16 - 17);
         let cz = bz0 + 8 + (a * 53) % (side * 16 - 17);
         let cy = 72;
@@ -75,28 +75,28 @@ fn main() {
         }
     }
     let obs_dt = t2.elapsed();
-    let cells = agents as f64 * 17.0 * 17.0 * 17.0;
+    let cells  = agents as f64 * 17.0 * 17.0 * 17.0;
     println!(
         "obs: {agents} agents x 17^3 voxel cube in {:.3} ms = {:.1} M cells/s (sink={sink})",
         obs_dt.as_secs_f64() * 1000.0,
         cells / obs_dt.as_secs_f64() / 1e6,
     );
     println!(
-        "  -> at this read rate, one 64-agent voxel fill costs ~{:.3} ms (excl. physics/sim)",
+        "  -> at this read rate one 64 agent voxel fill costs ~{:.3} ms (excl physics/sim)",
         obs_dt.as_secs_f64() * 1000.0,
     );
 
-    // --- full vanilla gen WITH features (trees) + confirm logs appear ---
+    // full vanilla gen with features (trees), confirm logs appear
     let mut fworld = World::new(seed);
-    let fr = 3i32; // 6x6 chunks generated to the Features stage
+    let fr = 3i32; // 6x6 chunks generated to the features stage
     let t3 = Instant::now();
     for cx in 0..fr * 2 {
         for cz in 0..fr * 2 {
             fworld.ensure_chunk(cx, cz);
         }
     }
-    let fdt = t3.elapsed();
-    let mut logs = 0u64;
+    let fdt        = t3.elapsed();
+    let mut logs   = 0u64;
     let mut leaves = 0u64;
     for x in 0..fr * 2 * 16 {
         for z in 0..fr * 2 * 16 {

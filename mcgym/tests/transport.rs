@@ -1,6 +1,5 @@
-//! End-to-end transport test: a Rust stand-in for the Python `ShmTransport` client
-//! drives a trivial gym over the real shm file + UDS, exercising the header,
-//! RESET/STEP/CLOSE handshake, and the action->obs data path.
+//! end to end transport, rust stand-in for the python ShmTransport client drives a trivial
+//! gym over the real shm file + uds, header, RESET/STEP/CLOSE and the action->obs path
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -15,8 +14,7 @@ use mcgym::transport::{
 
 const N: usize = 3;
 
-/// Stamps each agent's obs with its index + the tick, and echoes that agent's
-/// commanded `forward` into `health` so the client can confirm action delivery.
+// stamps each agent's obs with its index + tick, echoes commanded forward into health
 struct EchoGym {
     tick: i64,
 }
@@ -26,7 +24,7 @@ impl EchoGym {
         for i in 0..N {
             let mut o = Obs {
                 agent_id: i as i32,
-                tick: self.tick,
+                tick:     self.tick,
                 ..Default::default()
             };
             if let Some(a) = actions {
@@ -51,19 +49,19 @@ impl Gym for EchoGym {
 
 #[test]
 fn transport_round_trip() {
-    let dir = tempfile::tempdir().unwrap();
-    let shm = dir.path().join("shm.bin");
+    let dir  = tempfile::tempdir().unwrap();
+    let shm  = dir.path().join("shm.bin");
     let sock = dir.path().join("gym.sock");
 
     let (shm_t, sock_t) = (shm.clone(), sock.clone());
     let server = thread::spawn(move || {
-        let mut t = Transport::create(&shm_t, &sock_t, N).unwrap();
+        let mut t   = Transport::create(&shm_t, &sock_t, N).unwrap();
         let mut gym = EchoGym { tick: -1 };
         t.accept().unwrap();
         t.serve(&mut gym).unwrap();
     });
 
-    // Client: connect (retry until the server has bound), then attach to shm.
+    // connect (retry until the server has bound) then attach to shm
     let mut stream = loop {
         if let Ok(s) = UnixStream::connect(&sock) {
             break s;
@@ -71,11 +69,11 @@ fn transport_round_trip() {
         thread::sleep(Duration::from_millis(10));
     };
     let file = std::fs::File::open(&shm).unwrap();
-    let map = unsafe { Mmap::map(&file).unwrap() };
+    let map  = unsafe { Mmap::map(&file).unwrap() };
 
-    // Header checks (mirror ShmTransport.__init__).
-    assert_eq!(i32::from_le_bytes(map[0..4].try_into().unwrap()), MAGIC);
-    assert_eq!(i32::from_le_bytes(map[4..8].try_into().unwrap()), 1);
+    // header checks (mirror ShmTransport.__init__)
+    assert_eq!(i32::from_le_bytes(map[0..4] .try_into().unwrap()), MAGIC);
+    assert_eq!(i32::from_le_bytes(map[4..8] .try_into().unwrap()), 1);
     assert_eq!(i32::from_le_bytes(map[8..12].try_into().unwrap()), N as i32);
 
     let obs_off = HEADER_NBYTES + N * ACTION_NBYTES;
@@ -90,7 +88,7 @@ fn transport_round_trip() {
         assert_eq!(reply[0], REPLY_OK);
     };
 
-    // RESET -> tick 0, agent ids stamped.
+    // RESET -> tick 0, agent ids stamped
     send(&mut stream, CMD_RESET);
     for i in 0..N {
         let o = obs_at(i);
@@ -98,7 +96,7 @@ fn transport_round_trip() {
         assert_eq!(o.tick, 0);
     }
 
-    // Write actions into the shm ACTION region, STEP, confirm echo + tick advance.
+    // write actions into the shm ACTION region, STEP, confirm echo + tick advance
     {
         let mut wfile = std::fs::OpenOptions::new().read(true).write(true).open(&shm).unwrap();
         use std::io::{Seek, SeekFrom};

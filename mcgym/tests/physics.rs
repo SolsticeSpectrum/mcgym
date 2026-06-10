@@ -1,11 +1,10 @@
-//! Physics: an agent dropped over real terrain must fall under gravity and land on the surface
-//! (collision stops it, on_ground becomes true) rather than passing through or floating.
+//! physics, agent dropped over real terrain falls under gravity and lands on the surface
 
 use mcgym::physics::Agent;
 use mcgym::schema::Action;
 use mcgym::world::World;
 
-/// Highest solid block at (x,z): scan down for the first block with a collision shape.
+/// highest solid block at (x,z)
 fn surface_top(world: &World, x: i32, z: i32) -> i32 {
     use pumpkin_data::BlockState;
     for y in (world.bottom_y()..world.top_y()).rev() {
@@ -27,11 +26,11 @@ fn agent_falls_and_lands_on_terrain() {
         }
     }
 
-    let (x, z) = (8, 8);
-    let top = surface_top(&world, x, z); // y of the topmost solid block
+    let (x, z)  = (8, 8);
+    let top     = surface_top(&world, x, z);
     let stand_y = (top + 1) as f64; // feet rest on top of that block
 
-    // Drop from 6 blocks up, no input.
+    // drop from 6 blocks up, no input
     let mut agent = Agent::new([x as f64 + 0.5, stand_y + 6.0, z as f64 + 0.5], 0.0);
     let idle = Action::default();
 
@@ -52,9 +51,8 @@ fn agent_falls_and_lands_on_terrain() {
         stand_y
     );
 
-    // Once grounded and idle, it should stay put (not sink, not drift). Note vanilla keeps a
-    // resting entity's vel.y at -gravity*drag; collision cancels it each tick, so position is
-    // the stable invariant, not velocity.
+    // grounded and idle it should stay put, vanilla keeps a resting entity's vel.y at
+    // -gravity*drag and collision cancels it each tick, so position is the invariant
     let resting = agent.pos;
     for _ in 0..20 {
         agent.step(&world, &idle);
@@ -71,17 +69,17 @@ fn agent_walks_forward_on_flat_ground() {
         }
     }
     let (x, z) = (4, 4);
-    let top = surface_top(&world, x, z);
+    let top    = surface_top(&world, x, z);
     let mut agent = Agent::new([x as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5], 0.0);
 
-    // Settle on the ground first.
+    // settle on the ground first
     let idle = Action::default();
     for _ in 0..10 {
         agent.step(&world, &idle);
     }
     let start = agent.pos;
 
-    // Hold forward for a while (yaw 0 => +Z in MC).
+    // hold forward for a while (yaw 0 => +z)
     let fwd = Action { forward: 1.0, ..Default::default() };
     for _ in 0..20 {
         agent.step(&world, &fwd);
