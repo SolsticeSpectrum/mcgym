@@ -169,6 +169,8 @@ pub struct GymState {
     tick: i64,
     n: usize,
     spacing: i32,
+    /// Last chunk each agent occupied, to avoid re-probing the neighbourhood every tick.
+    last_chunk: Vec<(i32, i32)>,
 }
 
 impl GymState {
@@ -203,6 +205,7 @@ impl GymState {
             tick: 0,
             n: n_agents,
             spacing,
+            last_chunk: vec![(i32::MIN, i32::MIN); n_agents],
         }
     }
 
@@ -283,13 +286,27 @@ impl Gym for GymState {
         self.tick += 1;
         for i in 0..self.n {
             let a = Action::decode(&actions[i * ACTION_NBYTES..(i + 1) * ACTION_NBYTES]);
-            // Keep the neighbourhood generated as the agent roams (so it never walks into void).
+            // Only re-probe/generate the neighbourhood when the agent crosses a chunk boundary
+            // (it moves ~0.1 block/tick, so this is ~160x less work than every tick).
             let bp = self.agents[i].block_pos();
-            Self::ensure_around_chunk(&mut self.world, bp[0] >> 4, bp[2] >> 4);
+            let cc = (bp[0] >> 4, bp[2] >> 4);
+            if cc != self.last_chunk[i] {
+                Self::ensure_around_chunk(&mut self.world, cc.0, cc.1);
+                self.last_chunk[i] = cc;
+            }
             self.agents[i].step(&self.world, &a);
             // Disjoint fields: agent[i], world, reg borrowed separately.
             let broke = mine_step(&mut self.agents[i], &mut self.world, &self.reg, &a).is_some();
             self.update_and_relocate(i, broke);
+        }
+        // Periodically drop chunks no agent is near, bounding memory over long roaming runs.
+        if self.tick % 256 == 0 {
+            let centers: Vec<(i32, i32)> =
+                self.agents.iter().map(|ag| {
+                    let b = ag.block_pos();
+                    (b[0] >> 4, b[2] >> 4)
+                }).collect();
+            self.world.retain_chunks_near(&centers, CHUNK_RADIUS + 2);
         }
         self.write_all_obs(obs);
     }
