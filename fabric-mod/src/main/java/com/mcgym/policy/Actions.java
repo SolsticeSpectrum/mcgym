@@ -1,4 +1,4 @@
-package com.mcai.policy;
+package com.mcgym.policy;
 
 /**
  * The trainers multi discrete action space, 22 logits split into 7 heads

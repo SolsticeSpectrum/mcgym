@@ -2,7 +2,7 @@
 #
 # Usage: copy this folder (docker-compose.yml, bootstrap.sh, .env) to the host
 # and `docker compose up -d`. Everything else is automatic:
-#   - mcai-init (busybox, one-shot) writes the supervisord program configs and
+#   - mcgym-init (busybox, one-shot) writes the supervisord program configs and
 #     the SSH authorized_keys into the persistent data dir on every `up`
 #   - xgl starts; its supervisord picks up two extra programs, both backed by
 #     the single bootstrap.sh: `ssh` (dropbear on :2222) and `train`
@@ -13,12 +13,12 @@
 # ${DATA_DIR} (mounted as /drive2): toolchains, the repo clone, checkpoints,
 # the dropbear host key.
 services:
-  mcai-init:
-    container_name: mcai-init
+  mcgym-init:
+    container_name: mcgym-init
     image: busybox
     restart: "no"
     volumes:
-    - '${DATA_DIR:-/data/Docker/data}/mcai-init:/opt/init'
+    - '${DATA_DIR:-/data/Docker/data}/mcgym-init:/opt/init'
     command:
     - sh
     - -c
@@ -27,18 +27,18 @@ services:
       # authorized_keys from .env (multiple keys separated by ';')
       echo '${SSH_PUBLIC_KEYS:?set SSH_PUBLIC_KEYS in docker/.env}' | tr ';' '\n' > /opt/init/authorized_keys
       # supervisord programs — both run the one bootstrap script in different modes
-      cat > /opt/init/mcai-ssh.conf <<'EOF'
-      [program:mcai-ssh]
+      cat > /opt/init/mcgym-ssh.conf <<'EOF'
+      [program:mcgym-ssh]
       command=/bin/bash /opt/mcai/bootstrap.sh ssh
       directory=/home/ubuntu
       autostart=true
       autorestart=true
       priority=1
-      stdout_logfile=/tmp/mcai-ssh.log
+      stdout_logfile=/tmp/mcgym-ssh.log
       redirect_stderr=true
       EOF
-      cat > /opt/init/mcai-train.conf <<'EOF'
-      [program:mcai-train]
+      cat > /opt/init/mcgym-train.conf <<'EOF'
+      [program:mcgym-train]
       command=/bin/bash /opt/mcai/bootstrap.sh train
       directory=/home/ubuntu
       autostart=true
@@ -51,13 +51,13 @@ services:
       EOF
       chmod 600 /opt/init/authorized_keys
       chown -R 1000:1000 /opt/init
-      echo 'mcai-init: done'
+      echo 'mcgym-init: done'
 
   xgl:
     container_name: xgl
     hostname: xgl
     depends_on:
-      mcai-init:
+      mcgym-init:
         condition: service_completed_successfully
     image: ghcr.io/selkies-project/nvidia-glx-desktop:latest
     runtime: nvidia
@@ -84,10 +84,10 @@ services:
     volumes:
     - '${DATA_DIR:-/data/Docker/data}:/drive2'
     - './bootstrap.sh:/opt/mcai/bootstrap.sh:ro'
-    # files written by mcai-init above
-    - '${DATA_DIR:-/data/Docker/data}/mcai-init:/opt/mcai-init:ro'
-    - '${DATA_DIR:-/data/Docker/data}/mcai-init/mcai-ssh.conf:/etc/supervisor/conf.d/mcai-ssh.conf:ro'
-    - '${DATA_DIR:-/data/Docker/data}/mcai-init/mcai-train.conf:/etc/supervisor/conf.d/mcai-train.conf:ro'
+    # files written by mcgym-init above
+    - '${DATA_DIR:-/data/Docker/data}/mcgym-init:/opt/mcgym-init:ro'
+    - '${DATA_DIR:-/data/Docker/data}/mcgym-init/mcgym-ssh.conf:/etc/supervisor/conf.d/mcgym-ssh.conf:ro'
+    - '${DATA_DIR:-/data/Docker/data}/mcgym-init/mcgym-train.conf:/etc/supervisor/conf.d/mcgym-train.conf:ro'
     network_mode: 'host'
     environment:
     - TZ=UTC

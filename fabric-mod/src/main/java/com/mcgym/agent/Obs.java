@@ -1,7 +1,7 @@
-package com.mcai.agent;
+package com.mcgym.agent;
 
-import com.mcai.policy.Policy;
-import com.mcai.schema.Registry;
+import com.mcgym.policy.Policy;
+import com.mcgym.schema.Registry;
 
 import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;

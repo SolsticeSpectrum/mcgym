@@ -17,7 +17,7 @@ loom {
 	runs {
 		client {
 			// repo root with weights/ and schema/, the mod reads both by name
-			environmentVariable "MCAI_HOME", rootDir.parentFile.absolutePath
+			environmentVariable "MCGYM_HOME", rootDir.parentFile.absolutePath
 		}
 	}
 }

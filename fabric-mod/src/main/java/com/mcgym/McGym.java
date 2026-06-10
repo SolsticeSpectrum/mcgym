@@ -1,8 +1,8 @@
-package com.mcai;
+package com.mcgym;
 
-import com.mcai.agent.Runner;
-import com.mcai.policy.Policy;
-import com.mcai.schema.Registry;
+import com.mcgym.agent.Runner;
+import com.mcgym.policy.Policy;
+import com.mcgym.schema.Registry;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -16,9 +16,9 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.util.Locale;
 
-public final class Mcai implements ClientModInitializer {
+public final class McGym implements ClientModInitializer {
 
-    public static final Logger LOG = LoggerFactory.getLogger("mcai");
+    public static final Logger LOG = LoggerFactory.getLogger("mcgym");
     public static final String PREFIX = ".";
 
     private Registry registry;
@@ -38,13 +38,13 @@ public final class Mcai implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
 
-        LOG.info("mcai ready, use .run <name>, .stop, .status");
+        LOG.info("mcgym ready, use .run <name>, .stop, .status");
     }
 
     // repo root holding weights/ and schema/, no fallback
     private static Path home() {
-        String home = System.getenv("MCAI_HOME");
-        if (home == null) throw new IllegalStateException("MCAI_HOME not set, point it at the mcai repo");
+        String home = System.getenv("MCGYM_HOME");
+        if (home == null) throw new IllegalStateException("MCGYM_HOME not set, point it at the mcgym repo");
         return Path.of(home);
     }
 
@@ -110,7 +110,7 @@ public final class Mcai implements ClientModInitializer {
     }
 
     private void feedback(MinecraftClient mc, String msg) {
-        if (mc.player != null) mc.player.sendMessage(Text.literal("[mcai] " + msg), false);
-        LOG.info("[mcai] {}", msg);
+        if (mc.player != null) mc.player.sendMessage(Text.literal("[mcgym] " + msg), false);
+        LOG.info("[mcgym] {}", msg);
     }
 }

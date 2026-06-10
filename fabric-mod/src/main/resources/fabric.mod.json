@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
-	"id": "mcai",
+	"id": "mcgym",
 	"version": "${version}",
-	"name": "MCAI",
-	"description": "Runs a trained MCAI ONNX policy inside a real Minecraft client and drives the player with valid actions.",
+	"name": "MCGym",
+	"description": "Runs a trained MCGym ONNX policy inside a real Minecraft client and drives the player with valid actions.",
 	"authors": [
 		"SolsticeSpectrum"
 	],
@@ -11,7 +11,7 @@
 	"environment": "client",
 	"entrypoints": {
 		"client": [
-			"com.mcai.Mcai"
+			"com.mcgym.McGym"
 		]
 	},
 	"depends": {
