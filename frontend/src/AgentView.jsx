@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createVoxelScene, WATER, LAVA } from './voxelScene.js'
 import { drawAgentMini } from './miniRender.js'
+import { smoothAgent } from './sticky.js'
 
 const mediumTint = (head) =>
   head === WATER ? 'rgba(40,90,210,0.42)' : head === LAVA ? 'rgba(235,110,20,0.5)' : null
@@ -82,8 +83,9 @@ export default function AgentView({ env, i, palette }) {
     const tick = () =>
       fetch(`/agent?env=${env}&i=${i}`)
         .then((r) => r.json())
-        .then((d) => {
+        .then((raw) => {
           if (!alive) return
+          const d = smoothAgent(`${env}:${i}`, raw)
           setInfo(d)
           if (api.current) api.current.update(d, palette)
           drawAgentMini(d, palette, povRef.current, topRef.current)
