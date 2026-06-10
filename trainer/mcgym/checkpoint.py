@@ -59,6 +59,7 @@ def load_latest(directory, model, optimizer) -> dict | None:
     model.load_state_dict(
         torch.load(ckpt / "model.pt", map_location=loc, weights_only=True)
     )
+    
     if optimizer is not None and (ckpt / "optimizer.pt").exists():
         optimizer.load_state_dict(
             torch.load(ckpt / "optimizer.pt", map_location=loc, weights_only=True)

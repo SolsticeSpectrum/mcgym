@@ -1,6 +1,4 @@
 //! observation extraction, world + agent state -> schema Obs
-//! voxel index = ((dy+r)*edge + (dz+r))*edge + (dx+r), x fastest, matches the java gym
-//! todo legit mode occlusion, enclosed cells should read HIDDEN_BLOCK_ID like the java gym
 
 use pumpkin_data::BlockState;
 
@@ -12,7 +10,7 @@ use crate::world::World;
 const EYE_HEIGHT:      f64 = 1.62;
 pub const BLOCK_REACH: f64 = 4.5;
 
-/// fill one voxel grid centred at (cx,cy,cz) with stride 1 = near, 4 = far
+// stride 1 = near grid, 4 = far grid
 pub fn fill_voxels(
     world:  &World,
     reg:    &Registry,
@@ -23,10 +21,10 @@ pub fn fill_voxels(
     out:    &mut [i32],
 ) {
     debug_assert_eq!(out.len(), VOXEL_CELLS);
+    // todo legit mode occlusion, enclosed cells should read HIDDEN_BLOCK_ID like the java gym
     world.fill_voxels(reg, cx, cy, cz, stride, out);
 }
 
-/// flat index of the grid centre cell, the block the agent stands in
 #[inline]
 pub fn center_index() -> usize {
     let r    = VOXEL_RADIUS;
@@ -34,7 +32,7 @@ pub fn center_index() -> usize {
     (r * edge + r) * edge + r
 }
 
-/// unit look vector from yaw/pitch degrees, vanilla convention (yaw 0 => +z)
+// vanilla convention, yaw 0 => +z
 fn look_dir(yaw: f32, pitch: f32) -> [f64; 3] {
     let (yaw, pitch) = (f64::from(yaw).to_radians(), f64::from(pitch).to_radians());
     let f = pitch.cos();
@@ -47,19 +45,24 @@ fn is_solid(world: &World, x: i32, y: i32, z: i32) -> bool {
         .is_some_and(|sid| BlockState::from_id(sid).get_block_collision_shapes().count() > 0)
 }
 
-/// voxel dda from eye along unit dir up to reach, returns first solid block,
-/// face entered (mc direction order down,up,north,south,west,east = 0..5) and hit distance
-fn raycast(world: &World, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<([i32; 3], u8, f64)> {
+// voxel dda, face uses mc direction order down,up,north,south,west,east = 0..5
+fn raycast(
+    world: &World,
+    eye:   [f64; 3],
+    dir:   [f64; 3],
+    reach: f64
+) -> Option<([i32; 3], u8, f64)> {
     let mut b = [
         eye[0].floor() as i32,
         eye[1].floor() as i32,
         eye[2].floor() as i32,
     ];
-    let step = [
+    let step  = [
         dir[0].signum() as i32,
         dir[1].signum() as i32,
         dir[2].signum() as i32,
     ];
+
     let face_for = |axis: usize, s: i32| -> u8 {
         match (axis, s) {
             (0, 1) => 4,
@@ -70,6 +73,7 @@ fn raycast(world: &World, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<([
             _      => 3,
         }
     };
+
     let mut t_max   = [0.0f64; 3];
     let mut t_delta = [0.0f64; 3];
     for a in 0..3 {
@@ -83,6 +87,7 @@ fn raycast(world: &World, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<([
             t_max[a]   = next * t_delta[a];
         }
     }
+
     let mut t = 0.0;
     while t <= reach {
         // advance along the axis with the smallest t_max
@@ -92,6 +97,7 @@ fn raycast(world: &World, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<([
         b[axis]    += step[axis];
         t           = t_max[axis];
         t_max[axis] += t_delta[axis];
+
         if t > reach {
             break;
         }
@@ -99,10 +105,10 @@ fn raycast(world: &World, eye: [f64; 3], dir: [f64; 3], reach: f64) -> Option<([
             return Some((b, face_for(axis, step[axis]), t));
         }
     }
+
     None
 }
 
-/// raycast from an agent's eye along its look vector, shared by obs building and mining
 pub fn raycast_target(
     world: &World,
     pos:   [f64; 3],
@@ -114,8 +120,14 @@ pub fn raycast_target(
     raycast(world, eye, look_dir(yaw, pitch), reach)
 }
 
-/// full observation for one agent, entity slots stay zero until mobs exist
-pub fn build_obs(agent: &Agent, world: &World, reg: &Registry, tick: i64, agent_id: i32) -> Obs {
+// entity slots stay zero until mobs exist
+pub fn build_obs(
+    agent:    &Agent,
+    world:    &World,
+    reg:      &Registry,
+    tick:     i64,
+    agent_id: i32
+) -> Obs {
     let mut o = Obs {
         tick,
         agent_id,

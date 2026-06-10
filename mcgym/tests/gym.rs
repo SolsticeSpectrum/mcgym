@@ -1,5 +1,4 @@
 //! end to end gym assembly, spawn agents and RESET/STEP through the Gym trait
-//! emitted observations must be valid schema records reflecting real terrain
 
 use mcgym::gym::{GymState, decode_agent_obs};
 use mcgym::schema::{ACTION_NBYTES, Action, OBS_NBYTES};

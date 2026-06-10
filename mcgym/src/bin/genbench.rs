@@ -1,5 +1,4 @@
-//! benchmark headless worldgen + block read throughput, the two costs that made the
-//! java gym cpu bound, run: cargo run --release --bin genbench
+//! benchmark headless worldgen + block read throughput, the costs that made the java gym cpu bound
 
 use std::time::Instant;
 

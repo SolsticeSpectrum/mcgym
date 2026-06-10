@@ -4,7 +4,6 @@ use mcgym::physics::Agent;
 use mcgym::schema::Action;
 use mcgym::world::World;
 
-/// highest solid block at (x,z)
 fn surface_top(world: &World, x: i32, z: i32) -> i32 {
     use pumpkin_data::BlockState;
     for y in (world.bottom_y()..world.top_y()).rev() {

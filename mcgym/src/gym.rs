@@ -1,5 +1,4 @@
 //! n agents in one generated world, world + registry + physics + obs behind the Gym trait
-//! reset never teleports agents, stuck agents relocate to a new forest home
 
 use pumpkin_data::{Block, BlockState};
 
@@ -33,45 +32,57 @@ fn is_tree_block(name: &str) -> bool {
     name.ends_with("_log") || name.ends_with("_leaves") || name.ends_with("_wood") || name.ends_with("_stem")
 }
 
-/// one mining tick, accumulate vanilla break progress (speed / hardness / 30) while attack
-/// is held on a block in reach, on completion break it and return the dropped item id
-pub fn mine_step(agent: &mut Agent, world: &mut World, reg: &Registry, act: &Action) -> Option<i32> {
+// vanilla break progress, speed / hardness / 30 per tick while attack held on a block in reach
+pub fn mine_step(
+    agent: &mut Agent,
+    world: &mut World,
+    reg:   &Registry,
+    act:   &Action
+) -> Option<i32> {
     if act.attack == 0 {
         agent.mine_target   = None;
         agent.mine_progress = 0.0;
         return None;
     }
+
     let target = raycast_target(world, agent.pos, agent.yaw, agent.pitch, BLOCK_REACH);
     let Some((tb, _face, _dist)) = target else {
         agent.mine_target   = None;
         agent.mine_progress = 0.0;
         return None;
     };
+
     let Some(sid) = world.block_state_raw(tb[0], tb[1], tb[2]) else {
         return None;
     };
+
     let block    = Block::from_state_id(sid);
     let hardness = f64::from(block.hardness);
     if hardness < 0.0 {
         return None; // unbreakable (bedrock)
     }
+
     if agent.mine_target != Some(tb) {
         agent.mine_target   = Some(tb);
         agent.mine_progress = 0.0;
     }
+
     let speed = if is_wood(block.name) { AXE_SPEED } else { HAND_SPEED };
     agent.mine_progress += if hardness <= 0.0 { 1.0 }
                            else { speed / hardness / 30.0 };
+
     if agent.mine_progress >= 1.0 {
         world.break_block(tb[0], tb[1], tb[2]);
         agent.mine_target   = None;
         agent.mine_progress = 0.0;
+
         let item = reg.item(&format!("minecraft:{}", block.name));
         if item >= 0 {
             agent.add_item(item);
             return Some(item);
         }
     }
+
     None
 }
 
@@ -81,26 +92,28 @@ fn has_collision(world: &World, x: i32, y: i32, z: i32) -> bool {
         .is_some_and(|s| BlockState::from_id(s).get_block_collision_shapes().count() > 0)
 }
 
-/// feet y of a standable spot at (x,z): top terrain (non tree) solid with 2 air above
+// top non tree solid with 2 air above
 fn standable_feet_y(world: &World, x: i32, z: i32) -> Option<i32> {
     for y in (world.bottom_y()..world.top_y()).rev() {
         if !has_collision(world, x, y, z) {
             continue;
         }
+
         let name = Block::from_state_id(world.block_state_raw(x, y, z).unwrap()).name;
         if is_tree_block(name) {
             continue; // skip canopy/trunk, keep descending to ground
         }
+
         let fy = y + 1;
         if !has_collision(world, x, fy, z) && !has_collision(world, x, fy + 1, z) {
             return Some(fy);
         }
         return None;
     }
+
     None
 }
 
-/// all log positions within reach blocks of (ax,az) in the generated area
 fn collect_logs(world: &World, ax: i32, az: i32, reach: i32) -> Vec<[i32; 3]> {
     let mut logs = Vec::new();
     for x in (ax - reach)..=(ax + reach) {
@@ -114,6 +127,7 @@ fn collect_logs(world: &World, ax: i32, az: i32, reach: i32) -> Vec<[i32; 3]> {
             }
         }
     }
+
     logs
 }
 
@@ -121,8 +135,7 @@ fn yaw_facing(from: [f64; 2], to: [f64; 2]) -> f32 {
     (-(to[0] - from[0])).atan2(to[1] - from[1]).to_degrees() as f32
 }
 
-/// spawn standing by the log nearest the anchor, facing it
-/// anchor surface when no trees are in the generated area (far nav reward applies then)
+// stand by the log nearest the anchor facing it, anchor surface when no trees in range
 fn find_forest_spawn(world: &World, ax: i32, az: i32, reach: i32) -> ([f64; 3], f32) {
     let logs = collect_logs(world, ax, az, reach);
     if let Some(log) = logs.iter().min_by_key(|p| {
@@ -146,11 +159,13 @@ fn find_forest_spawn(world: &World, ax: i32, az: i32, reach: i32) -> ([f64; 3], 
                 }
             }
         }
+
         if let Some((_, pos)) = best {
             let yaw = yaw_facing([pos[0], pos[2]], [f64::from(lx) + 0.5, f64::from(lz) + 0.5]);
             return (pos, yaw);
         }
     }
+
     let fy = standable_feet_y(world, ax, az).unwrap_or(world.bottom_y() + 64);
     ([f64::from(ax) + 0.5, f64::from(fy), f64::from(az) + 0.5], 0.0)
 }
@@ -166,7 +181,6 @@ pub struct GymState {
 }
 
 impl GymState {
-    /// spawn n agents spread on a grid spacing blocks apart, each near trees on the surface
     pub fn new(n: usize, seed: i64, spacing: i32) -> Self {
         let reg        = Registry::load();
         let mut world  = World::new(seed);
@@ -199,7 +213,6 @@ impl GymState {
         }
     }
 
-    /// generate the CHUNK_RADIUS neighbourhood around a chunk, cached so cheap if present
     fn ensure_around_chunk(world: &mut World, ccx: i32, ccz: i32) {
         for dcx in -CHUNK_RADIUS..=CHUNK_RADIUS {
             for dcz in -CHUNK_RADIUS..=CHUNK_RADIUS {
@@ -208,7 +221,7 @@ impl GymState {
         }
     }
 
-    /// stuck tracking + respawn/relocate, progress = moved >= MOVE_PROGRESS or broke a block
+    // progress = moved >= MOVE_PROGRESS or broke a block
     fn update_and_relocate(&mut self, i: usize, broke: bool) {
         let (px, pz) = (self.agents[i].pos[0], self.agents[i].pos[2]);
         let dref = (px - self.agents[i].ref_xz[0]).powi(2) + (pz - self.agents[i].ref_xz[1]).powi(2);
@@ -259,11 +272,11 @@ impl GymState {
             o.encode_into(&mut obs[i * OBS_NBYTES..(i + 1) * OBS_NBYTES]);
         }
     }
-
 }
 
 impl Gym for GymState {
     fn reset(&mut self, obs: &mut [u8]) {
+        // reset never teleports agents
         self.tick = 0;
         self.write_all_obs(obs);
     }
@@ -296,7 +309,6 @@ impl Gym for GymState {
     }
 }
 
-/// decode one agent's observation from an obs region (tests/inspection)
 pub fn decode_agent_obs(obs: &[u8], i: usize) -> Obs {
     Obs::decode(&obs[i * OBS_NBYTES..(i + 1) * OBS_NBYTES])
 }
