@@ -45,9 +45,12 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     # Keep the voxel/id grids as int32 for the CPU->GPU transfer (they are i32 in the schema);
     # upcast to long on the GPU inside the encoder. Transferring int32 instead of int64 halves
     # the H2D traffic, which dominates both collect and the per-minibatch update re-encode.
-    voxel = np.ascontiguousarray(obs["voxel_blocks"])
-    voxel_far = np.ascontiguousarray(obs["voxel_far"])
-    target_block = np.ascontiguousarray(obs["target_block"])
+    # .copy(): structured-array field views always need the copy anyway, and unlike
+    # ascontiguousarray it also fixes the misaligned strides a batch-of-1 view reports
+    # (torch.from_numpy rejects those — hit by the ONNX export path).
+    voxel = obs["voxel_blocks"].copy()
+    voxel_far = obs["voxel_far"].copy()
+    target_block = obs["target_block"].copy()
 
     vel = np.ascontiguousarray(obs["vel"]).astype(np.float32)
     yaw = np.ascontiguousarray(obs["yaw"]).astype(np.float32)
@@ -59,7 +62,7 @@ def obs_to_tensors(obs_struct_batch: np.ndarray, device) -> dict:
     target_in_range = np.ascontiguousarray(obs["target_in_range"]).astype(np.float32)
     target_face = np.ascontiguousarray(obs["target_face"]).astype(np.int64)
 
-    inv_item_id = np.ascontiguousarray(obs["inv_item_id"])
+    inv_item_id = obs["inv_item_id"].copy()
     inv_count = np.ascontiguousarray(obs["inv_count"]).astype(np.float32)
 
     yaw_r = np.deg2rad(yaw)
