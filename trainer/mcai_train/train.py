@@ -308,11 +308,18 @@ def train(args: argparse.Namespace) -> None:
             return float(np.concatenate([envA.wood_held(obsA), envB.wood_held(obsB)]).mean())
 
         cur = 0
-        completed_prev = collect(bufs[cur])  # prime
+        completed_prev = collect(bufs[cur])  # prime (also compiles the collect forward, serially)
+        first_update = True
         while cumulative_timesteps < args.total_timesteps:
             t0 = time.monotonic()
             th = threading.Thread(target=run_update, args=(bufs[cur],), daemon=True)
             th.start()
+            if first_update:
+                # Dynamo tracing is not thread-safe against executing another compiled function:
+                # the first update compiles evaluate (fwd+bwd) — let it finish before collecting
+                # concurrently. One serialized update, then full overlap.
+                th.join()
+                first_update = False
             nxt = 1 - cur
             completed = collect(bufs[nxt])      # collect (cores+GPU overlap) || update (GPU)
             th.join()
