@@ -12,6 +12,9 @@ struct Args {
     agents:  usize,
     seed:    i64,
     spacing: i32,
+    world:   Option<PathBuf>, // loaded map instead of worldgen
+    spawn:   [f64; 4],        // x y z yaw for loaded maps
+    mining:  bool,
 }
 
 fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
@@ -20,6 +23,9 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
     let mut agents  = None;
     let mut seed    = 0i64;
     let mut spacing = 1024i32;
+    let mut world   = None;
+    let mut spawn   = None;
+    let mut mining  = true;
 
     while let Some(flag) = args.next() {
         let mut val = || args.next().ok_or_else(|| format!("missing value for {flag}"));
@@ -29,8 +35,24 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
             "--agents"  => agents  = Some(val()?.parse().map_err(|e| format!("--agents: {e}"))?),
             "--seed"    => seed    = val()?.parse().map_err(|e| format!("--seed: {e}"))?,
             "--spacing" => spacing = val()?.parse().map_err(|e| format!("--spacing: {e}"))?,
+            "--world"   => world   = Some(PathBuf::from(val()?)),
+            "--spawn"   => {
+                let v: Vec<f64> = val()?
+                    .split(',')
+                    .map(|p| p.parse().map_err(|e| format!("--spawn: {e}")))
+                    .collect::<Result<_, _>>()?;
+                if v.len() != 4 {
+                    return Err("--spawn wants x,y,z,yaw".into());
+                }
+                spawn = Some([v[0], v[1], v[2], v[3]]);
+            }
+            "--mining"  => mining  = val()?.parse::<u8>().map_err(|e| format!("--mining: {e}"))? != 0,
             other       => return Err(format!("unknown argument {other}")),
         }
+    }
+
+    if world.is_some() && spawn.is_none() {
+        return Err("--world needs --spawn".into());
     }
 
     Ok(Args {
@@ -39,6 +61,9 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
         agents:  agents.ok_or("--agents is required")?,
         seed,
         spacing,
+        world,
+        spawn:   spawn.unwrap_or([0.0; 4]),
+        mining,
     })
 }
 
@@ -48,8 +73,15 @@ fn run() -> Result<(), String> {
         return Err("--agents must be > 0".into());
     }
 
-    eprintln!("[mcgym] booting {} agents (seed={} spacing={})", args.agents, args.seed, args.spacing);
-    let mut gym = GymState::new(args.agents, args.seed, args.spacing);
+    let mut gym = if let Some(dir) = &args.world {
+        eprintln!("[mcgym] booting {} agents on map {}", args.agents, dir.display());
+        GymState::fixed(args.agents, dir,
+                        [args.spawn[0], args.spawn[1], args.spawn[2]],
+                        args.spawn[3] as f32, args.mining)
+    } else {
+        eprintln!("[mcgym] booting {} agents (seed={} spacing={})", args.agents, args.seed, args.spacing);
+        GymState::new(args.agents, args.seed, args.spacing)
+    };
 
     let mut transport = Transport::create(&args.shm, &args.sock, args.agents)
         .map_err(|e| format!("transport setup failed: {e}"))?;

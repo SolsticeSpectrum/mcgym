@@ -1,6 +1,6 @@
-//! obs/action byte layout, the cross language contract (schema/mcgym_schema.yaml v1)
+//! obs/action byte layout, the cross language contract (schema/mcgym_schema.yaml v2)
 
-pub const SCHEMA_VERSION:      i32 = 1;
+pub const SCHEMA_VERSION:      i32 = 2;
 
 pub const VOXEL_RADIUS:      usize = 8;
 pub const VOXEL_EDGE:        usize = 2 * VOXEL_RADIUS + 1; // 17
@@ -9,8 +9,9 @@ pub const VOXEL_FAR_STRIDE:    i32 = 4;
 pub const MAX_ENTITIES:      usize = 16;
 pub const INVENTORY_SLOTS:   usize = 41;
 pub const HIDDEN_BLOCK_ID:     i32 = -1;
+pub const BOUNDS_DIMS:       usize = 6; // per cell aabb x0 y0 z0 x1 y1 z1 in 16ths
 
-pub const OBS_NBYTES:        usize = 40169;
+pub const OBS_NBYTES:        usize = 69647;
 pub const ACTION_NBYTES:     usize = 27;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +29,7 @@ pub struct Obs {
     pub selected_slot:   u8,
     pub voxel_blocks:    Vec<i32>, // len VOXEL_CELLS
     pub voxel_far:       Vec<i32>, // len VOXEL_CELLS
+    pub voxel_bounds:    Vec<u8>,  // len VOXEL_CELLS * BOUNDS_DIMS, near grid collision aabbs
     pub target_block:    i32,
     pub target_face:     u8,
     pub target_distance: f32,
@@ -58,6 +60,7 @@ impl Default for Obs {
             selected_slot:   0,
             voxel_blocks:    vec![0; VOXEL_CELLS],
             voxel_far:       vec![0; VOXEL_CELLS],
+            voxel_bounds:    vec![0; VOXEL_CELLS * BOUNDS_DIMS],
             target_block:    0,
             target_face:     0,
             target_distance: 0.0,
@@ -145,6 +148,7 @@ impl Obs {
         assert_eq!(dst.len(), OBS_NBYTES, "obs dst wrong size");
         assert_eq!(self.voxel_blocks.len(), VOXEL_CELLS, "voxel_blocks len");
         assert_eq!(self.voxel_far.len(), VOXEL_CELLS, "voxel_far len");
+        assert_eq!(self.voxel_bounds.len(), VOXEL_CELLS * BOUNDS_DIMS, "voxel_bounds len");
 
         let mut w = LeWriter::new(dst);
         w.i32(self.schema_version);
@@ -161,6 +165,7 @@ impl Obs {
         w.u8(self.selected_slot);
         for &v in &self.voxel_blocks { w.i32(v); }
         for &v in &self.voxel_far    { w.i32(v); }
+        w.bytes(&self.voxel_bounds);
 
         w.i32(self.target_block);
         w.u8(self.target_face);
@@ -202,6 +207,7 @@ impl Obs {
         o.selected_slot   = r.u8();
         for c in o.voxel_blocks.iter_mut() { *c = r.i32(); }
         for c in o.voxel_far.iter_mut()    { *c = r.i32(); }
+        o.voxel_bounds.copy_from_slice(r.take(VOXEL_CELLS * BOUNDS_DIMS));
 
         o.target_block    = r.i32();
         o.target_face     = r.u8();

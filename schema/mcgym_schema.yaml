@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 
 params:
   voxel_radius: 8      # voxel edge = 2*r+1 = 17, cells = 4913
@@ -21,6 +21,7 @@ observation:
   - {name: selected_slot, dtype: u8}
   - {name: voxel_blocks, dtype: i32, shape: [4913]}
   - {name: voxel_far, dtype: i32, shape: [4913]}
+  - {name: voxel_bounds, dtype: u8, shape: [4913, 6]}  # per cell collision aabb in 16ths, x0 y0 z0 x1 y1 z1
   - {name: target_block, dtype: i32}
   - {name: target_face, dtype: u8}
   - {name: target_distance, dtype: f32}

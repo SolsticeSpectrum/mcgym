@@ -144,6 +144,7 @@ pub fn build_obs(
     let [cx, cy, cz] = agent.block_pos();
     fill_voxels(world, reg, cx, cy, cz, 1,                &mut o.voxel_blocks);
     fill_voxels(world, reg, cx, cy, cz, VOXEL_FAR_STRIDE, &mut o.voxel_far);
+    world.fill_bounds(cx, cy, cz, &mut o.voxel_bounds);
 
     if let Some(([hx, hy, hz], face, dist)) =
         raycast_target(world, agent.pos, agent.yaw, agent.pitch, BLOCK_REACH)

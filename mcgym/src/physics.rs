@@ -15,6 +15,11 @@ const DEFAULT_SLIP:  f64 = 0.6;
 const WALK_SPEED:    f64 = 0.1;
 const SPRINT_MUL:    f64 = 1.3;
 const JUMP_VELOCITY: f64 = 0.42;
+const SPRINT_BOOST:  f64 = 0.2;  // forward kick on a sprint jump
+const STEP_UP:       f64 = 0.6;  // players walk up slabs and stairs
+const WATER_SLOW:    f64 = 0.8;  // 0.9 while sprinting
+const WATER_SPEED:   f64 = 0.02;
+const WATER_JUMP:    f64 = 0.04; // per tick while jump held in water
 const EPS:           f64 = 1.0e-7;
 
 #[derive(Clone, Copy, Debug)]
@@ -143,11 +148,19 @@ impl Agent {
         ]
     }
 
-    // one tick: camera, moveRelative, jump, collide, gravity/friction
+    // one tick: camera then the vanilla land or water travel branch
     pub fn step(&mut self, world: &World, act: &Action) {
         self.yaw  += act.yaw_delta;
         self.pitch = (self.pitch + act.pitch_delta).clamp(-90.0, 90.0);
 
+        if self.in_water(world) {
+            self.step_water(world, act);
+        } else {
+            self.step_land(world, act);
+        }
+    }
+
+    fn step_land(&mut self, world: &World, act: &Action) {
         let friction = if self.on_ground { DEFAULT_SLIP * AIR_FRICTION }
                        else { AIR_FRICTION };
         let mut accel = if self.on_ground { WALK_SPEED * (0.216 / (friction * friction * friction)) }
@@ -158,7 +171,13 @@ impl Agent {
         self.move_relative(accel, f64::from(act.forward), f64::from(act.strafe));
 
         if act.jump != 0 && self.on_ground {
-            self.vel[1] = JUMP_VELOCITY;
+            self.vel[1] = JUMP_VELOCITY.max(self.vel[1]);
+            // sprint jumps kick forward, this is what makes 4 block gaps possible
+            if act.sprint != 0 {
+                let yaw = f64::from(self.yaw).to_radians();
+                self.vel[0] += -yaw.sin() * SPRINT_BOOST;
+                self.vel[2] +=  yaw.cos() * SPRINT_BOOST;
+            }
         }
 
         self.move_and_collide(world);
@@ -166,6 +185,70 @@ impl Agent {
         self.vel[1]  = (self.vel[1] - GRAVITY) * DRAG_Y;
         self.vel[0] *= friction;
         self.vel[2] *= friction;
+    }
+
+    // vanilla travelInWater for a player, no depth strider
+    fn step_water(&mut self, world: &World, act: &Action) {
+        let slow = if act.sprint != 0 { 0.9 } else { WATER_SLOW };
+
+        if act.jump != 0 {
+            self.vel[1] += WATER_JUMP;
+        }
+
+        self.move_relative(WATER_SPEED, f64::from(act.forward), f64::from(act.strafe));
+        let falling = self.vel[1] <= 0.0;
+        let hit     = self.move_and_collide(world);
+
+        self.vel[0] *= slow;
+        self.vel[1] *= 0.8;
+        self.vel[2] *= slow;
+
+        // fluid falling adjustment, sinking settles at a slow terminal speed
+        if act.sprint == 0 {
+            let vy = self.vel[1];
+            self.vel[1] = if falling && (vy - 0.005).abs() >= 0.003 && (vy - GRAVITY / 16.0).abs() < 0.003 {
+                              -0.003
+                          } else {
+                              vy - GRAVITY / 16.0
+                          };
+        }
+
+        // hop out of the water against an edge
+        if hit && self.free_at(world, self.vel[0], self.vel[1] + STEP_UP, self.vel[2]) {
+            self.vel[1] = 0.3;
+        }
+    }
+
+    // any liquid cell overlapping the player box
+    fn in_water(&self, world: &World) -> bool {
+        let bb = Aabb::player(self.pos);
+        let lo = [bb.min[0] + 0.001, bb.min[1] + 0.001, bb.min[2] + 0.001];
+        let hi = [bb.max[0] - 0.001, bb.max[1] - 0.001, bb.max[2] - 0.001];
+        for bx in (lo[0].floor() as i32)..=(hi[0].floor() as i32) {
+            for by in (lo[1].floor() as i32)..=(hi[1].floor() as i32) {
+                for bz in (lo[2].floor() as i32)..=(hi[2].floor() as i32) {
+                    let liquid = world
+                        .block_state_raw(bx, by, bz)
+                        .is_some_and(|s| BlockState::from_id(s).is_liquid());
+                    if liquid {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    // would the player box fit after moving by d
+    fn free_at(&self, world: &World, dx: f64, dy: f64, dz: f64) -> bool {
+        let bb    = Aabb::player([self.pos[0] + dx, self.pos[1] + dy, self.pos[2] + dz]);
+        let boxes = Self::nearby_block_boxes(world, &bb, [0.0; 3]);
+        boxes.iter().all(|b| {
+            bb.max[0] <= b.min[0] || bb.min[0] >= b.max[0]
+                || bb.max[1] <= b.min[1] || bb.min[1] >= b.max[1]
+                || bb.max[2] <= b.min[2] || bb.min[2] >= b.max[2]
+        })
     }
 
     // vanilla moveRelative, yaw rotated input added to horizontal velocity
@@ -184,18 +267,45 @@ impl Agent {
         self.vel[2] += f * cos + s * sin;
     }
 
-    // sweep the player box by vel against block colliders, resolve y then x then z
-    fn move_and_collide(&mut self, world: &World) {
-        let want   = self.vel;
-        let mut bb = Aabb::player(self.pos);
-        let boxes  = Self::nearby_block_boxes(world, &bb, want);
-
-        let mut d = want;
+    // sweep want against block colliders, resolve y then x then z
+    fn sweep(boxes: &[Aabb], from: Aabb, want: [f64; 3]) -> [f64; 3] {
+        let mut bb = from;
+        let mut d  = want;
         for axis in [1usize, 0, 2] {
-            for b in &boxes {
+            for b in boxes {
                 d[axis] = bb.clamp_axis(b, axis, d[axis]);
             }
             bb.shift(axis, d[axis]);
+        }
+
+        d
+    }
+
+    // collide and move, stepping up to STEP_UP when a grounded walk hits an
+    // edge like a slab or stair, returns whether horizontal motion was blocked
+    fn move_and_collide(&mut self, world: &World) -> bool {
+        let want  = self.vel;
+        let bb    = Aabb::player(self.pos);
+        let boxes = Self::nearby_block_boxes(world, &bb, [want[0], want[1] + STEP_UP, want[2]]);
+
+        let mut d   = Self::sweep(&boxes, bb, want);
+        let blocked = (d[0] - want[0]).abs() > EPS || (d[2] - want[2]).abs() > EPS;
+        let grounded = self.on_ground || (want[1] < 0.0 && (d[1] - want[1]).abs() > EPS);
+        if blocked && grounded {
+            // up, across, settle back down
+            let up     = Self::sweep(&boxes, bb, [0.0, STEP_UP, 0.0])[1];
+            let mut at = bb;
+            at.shift(1, up);
+            let across = Self::sweep(&boxes, at, [want[0], 0.0, want[2]]);
+            at.shift(0, across[0]);
+            at.shift(2, across[2]);
+            let down = Self::sweep(&boxes, at, [0.0, -up + want[1].min(0.0), 0.0])[1];
+
+            let stepped = across[0] * across[0] + across[2] * across[2];
+            let flat    = d[0] * d[0] + d[2] * d[2];
+            if stepped > flat {
+                d = [across[0], up + down, across[2]];
+            }
         }
 
         self.on_ground = want[1] < 0.0 && (d[1] - want[1]).abs() > EPS;
@@ -205,6 +315,8 @@ impl Agent {
             }
             self.pos[ax] += d[ax];
         }
+
+        blocked
     }
 
     fn nearby_block_boxes(world: &World, bb: &Aabb, vel: [f64; 3]) -> Vec<Aabb> {

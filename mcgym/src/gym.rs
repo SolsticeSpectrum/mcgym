@@ -177,6 +177,8 @@ pub struct GymState {
     tick:       i64,
     n:          usize,
     spacing:    i32,
+    mining:     bool,
+    roam:       bool, // worldgen mode, stuck agents relocate to new forest homes
     last_chunk: Vec<(i32, i32)>, // skip neighbourhood probe until agent crosses a chunk
 }
 
@@ -209,6 +211,26 @@ impl GymState {
             tick:       0,
             n,
             spacing,
+            mining:     true,
+            roam:       true,
+            last_chunk: vec![(i32::MIN, i32::MIN); n],
+        }
+    }
+
+    // loaded map, every agent starts at the same spawn
+    pub fn fixed(n: usize, dir: &std::path::Path, spawn: [f64; 3], yaw: f32, mining: bool) -> Self {
+        let world  = World::load(dir).expect("world load failed");
+        let agents = (0..n).map(|_| Agent::new(spawn, yaw)).collect();
+
+        Self {
+            world,
+            reg:        Registry::load(),
+            agents,
+            tick:       0,
+            n,
+            spacing:    0,
+            mining,
+            roam:       false,
             last_chunk: vec![(i32::MIN, i32::MIN); n],
         }
     }
@@ -248,7 +270,7 @@ impl GymState {
         }
 
         // alive but no progress for STUCK_GIVEUP, home is hopeless, pick new forest home
-        if self.tick - self.agents[i].last_progress_tick >= STUCK_GIVEUP {
+        if self.roam && self.tick - self.agents[i].last_progress_tick >= STUCK_GIVEUP {
             let old        = self.agents[i].home;
             let (nax, naz) = (old[0] as i32 + self.spacing, old[2] as i32);
             Self::ensure_around_chunk(&mut self.world, nax >> 4, naz >> 4);
@@ -297,7 +319,8 @@ impl Gym for GymState {
             self.agents[i].step(&self.world, &a);
 
             // disjoint borrows, agent world reg
-            let broke = mine_step(&mut self.agents[i], &mut self.world, &self.reg, &a).is_some();
+            let broke = self.mining
+                && mine_step(&mut self.agents[i], &mut self.world, &self.reg, &a).is_some();
             self.update_and_relocate(i, broke);
         }
 
