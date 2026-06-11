@@ -31,6 +31,7 @@ fn gym_resets_steps_and_emits_valid_obs() {
     for i in 0..n {
         actions[i * ACTION_NBYTES..(i + 1) * ACTION_NBYTES].copy_from_slice(&enc);
     }
+    
     for _ in 0..25 {
         gym.step(&actions, &mut obs);
     }

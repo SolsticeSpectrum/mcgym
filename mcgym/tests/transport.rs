@@ -107,6 +107,7 @@ fn transport_round_trip() {
         }
         wfile.flush().unwrap();
     }
+    
     send(&mut stream, CMD_STEP);
     for i in 0..N {
         let o = obs_at(i);

@@ -34,14 +34,17 @@ fn golden_obs() -> Obs {
         target_in_range: 1,
         ..Default::default()
     };
+
     for i in 0..MAX_ENTITIES {
         o.entity_type_id[i] = i as i32;
         o.entity_health[i]  = 20.0;
     }
+
     for i in 0..INVENTORY_SLOTS {
         o.inv_item_id[i] = i as i32;
         o.inv_count[i]   = 1;
     }
+    
     o
 }
 

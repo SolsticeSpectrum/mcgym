@@ -31,6 +31,7 @@ fn voxel_center_matches_world_and_finds_logs() {
             }
         }
     }
+    
     let (lx, ly, lz, log_id) = log_pos.expect("a forest area should contain at least one log");
     assert!(log_id > 0, "log should map to a real registry id");
 

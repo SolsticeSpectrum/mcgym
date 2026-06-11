@@ -13,6 +13,7 @@ fn surface_top(world: &World, x: i32, z: i32) -> i32 {
             }
         }
     }
+    
     world.bottom_y()
 }
 
@@ -56,6 +57,7 @@ fn agent_falls_and_lands_on_terrain() {
     for _ in 0..20 {
         agent.step(&world, &idle);
     }
+
     assert!((agent.pos[1] - resting[1]).abs() < 1e-6, "agent sank/rose while resting");
 }
 
@@ -67,6 +69,7 @@ fn agent_walks_forward_on_flat_ground() {
             world.ensure_terrain_chunk(cx, cz);
         }
     }
+
     let (x, z) = (4, 4);
     let top    = surface_top(&world, x, z);
     let mut agent = Agent::new([x as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5], 0.0);
@@ -76,6 +79,7 @@ fn agent_walks_forward_on_flat_ground() {
     for _ in 0..10 {
         agent.step(&world, &idle);
     }
+
     let start = agent.pos;
 
     // hold forward for a while (yaw 0 => +z)
@@ -83,6 +87,7 @@ fn agent_walks_forward_on_flat_ground() {
     for _ in 0..20 {
         agent.step(&world, &fwd);
     }
+
     let moved = (agent.pos[0] - start[0]).hypot(agent.pos[2] - start[2]);
     assert!(moved > 1.0, "agent barely moved forward ({moved:.3} blocks)");
 }

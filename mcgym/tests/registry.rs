@@ -6,6 +6,7 @@ use pumpkin_data::Block;
 #[test]
 fn maps_known_blocks() {
     let r = Registry::load();
+    
     // registry.json: air=0 stone=1 oak_log=49
     assert_eq!(r.block(Block::AIR.default_state.id),        0, "air");
     assert_eq!(r.block(Block::STONE.default_state.id),      1, "stone");

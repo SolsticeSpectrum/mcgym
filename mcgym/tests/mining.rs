@@ -47,6 +47,7 @@ fn agent_mines_a_log_into_inventory() {
         [f64::from(lx) + 0.5, f64::from(ly) - 1.12, f64::from(lz) - 1.5],
         0.0,
     );
+    
     let aim = raycast_target(&world, agent.pos, agent.yaw, agent.pitch, 4.5);
     assert_eq!(
         aim.map(|(b, _, _)| b),
@@ -63,6 +64,7 @@ fn agent_mines_a_log_into_inventory() {
             break;
         }
     }
+
     let (ticks, item) = broke.expect("log should break within 30 ticks");
     assert!((5..=20).contains(&ticks), "break took {ticks} ticks (expected ~10)");
     assert!(item >= 0, "log should map to a real item id");
