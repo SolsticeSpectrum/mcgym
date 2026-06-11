@@ -25,7 +25,7 @@ W_FAR      = 0.1     # same on the far shell, pulls toward distant trees
 W_FACE     = 0.05    # looking at an in range log
 W_ATTACK   = 0.15    # attacking an in range log, sustained mining
 W_ANYITEM  = 0.2     # delta total inventory, bootstraps pick something up
-W_DEATH    = 10.0    # death penalty, real signal not engineered away
+W_DEATH    = 10.0    # death penalty
 # caps style action rate shaping (arxiv 2012.06644), jerk punishes camera reversals,
 # vel curbs endless spinning, jump curbs random hopping
 W_CAMERA   = 0.0006
