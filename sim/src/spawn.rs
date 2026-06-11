@@ -100,6 +100,36 @@ pub fn forest(steel: &Steel, ax: i32, az: i32) -> (DVec3, f32) {
     (DVec3::new(f64::from(ax) + 0.5, f64::from(fy), f64::from(az) + 0.5), 0.0)
 }
 
+fn fluid(n: &str) -> bool {
+    matches!(n, "water" | "bubble_column" | "kelp" | "kelp_plant" | "seagrass" | "tall_seagrass")
+}
+
+// standable cells near the anchor, real floor only, nearest first, fixed map spawns
+pub fn pad(steel: &Steel, anchor: DVec3, r: i32) -> Vec<DVec3> {
+    let (ax, ay, az) = (anchor.x.floor() as i32, anchor.y.floor() as i32, anchor.z.floor() as i32);
+    let mut cells = Vec::new();
+    for x in ax - r..=ax + r {
+        for z in az - r..=az + r {
+            for fy in ay - 2..=ay + 2 {
+                let ground = name(steel, x, fy - 1, z);
+                if airy(ground) || fluid(ground) || tree(ground) {
+                    continue;
+                }
+                if airy(name(steel, x, fy, z)) && airy(name(steel, x, fy + 1, z)) {
+                    cells.push(DVec3::new(f64::from(x) + 0.5, f64::from(fy), f64::from(z) + 0.5));
+                    break;
+                }
+            }
+        }
+    }
+    cells.sort_by(|a, b| {
+        let da = (a.x - anchor.x).powi(2) + (a.z - anchor.z).powi(2);
+        let db = (b.x - anchor.x).powi(2) + (b.z - anchor.z).powi(2);
+        da.total_cmp(&db)
+    });
+    cells
+}
+
 // log count in the azalea inventory, the gym side progress signal
 pub fn wood_count(swarm: &Swarm, _reg: &Registry, i: usize) -> i32 {
     let inv: Inventory = swarm.get(i);

@@ -109,9 +109,12 @@ impl Sim {
         let mut sim = Self::assemble(steel, n, threads, mining, false, 0);
         sim.tickets = tickets;
 
-        let pos = DVec3::new(spawn[0], spawn[1], spawn[2]);
+        // agents spread over real floor cells, a bad anchor must never ship again
+        let anchor = DVec3::new(spawn[0], spawn[1], spawn[2]);
+        let cells  = crate::spawn::pad(&sim.steel, anchor, 4);
+        assert!(!cells.is_empty(), "no standable floor within 4 blocks of {anchor:?}");
         for i in 0..n {
-            sim.join(i, pos, yaw, view);
+            sim.join(i, cells[i % cells.len()], yaw, view);
         }
         sim.settle();
         sim
