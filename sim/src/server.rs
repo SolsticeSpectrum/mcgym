@@ -67,6 +67,11 @@ pub struct Steel {
 
 // worlds.toml equivalent, ram storage, no disk anywhere
 fn worlds_toml(generator: &str, seed: i64) -> String {
+    // strict per generator config, empty needs the dimension type, overworld takes none
+    let config = match generator {
+        "steel:empty" => "\n[domains.minecraft.worlds.config]\ndimension_type = \"minecraft:overworld\"",
+        _             => "",
+    };
     format!(
         r#"
         save_path = "sim-void"
@@ -87,6 +92,7 @@ fn worlds_toml(generator: &str, seed: i64) -> String {
         name = "overworld"
         generator = "{generator}"
         default = true
+        {config}
         "#
     )
 }
@@ -106,7 +112,7 @@ impl Steel {
         let config = RuntimeConfig {
             max_players:         1024,
             view_distance:       view,
-            simulation_distance: view,
+            simulation_distance: 2,
             online_mode:         false,
             allow_flight:        false,
             encryption:          false,
@@ -140,17 +146,25 @@ impl Steel {
 
     // ticket a chunk and pump scheduling until it is fully generated, flint pattern
     pub fn ensure(&self, pos: steel_utils::types::ChunkPos) -> ChunkRequestHandle {
-        let map    = &self.world.chunk_map;
-        let handle = map.request_chunk(pos, ChunkStatus::Full, ChunkTicketKind::Command);
+        self.ensure_all(&[pos]).pop().expect("one handle")
+    }
+
+    // batch form, all tickets first so the generation pool works in parallel
+    pub fn ensure_all(&self, all: &[steel_utils::types::ChunkPos]) -> Vec<ChunkRequestHandle> {
+        let map = &self.world.chunk_map;
+        let handles: Vec<_> = all
+            .iter()
+            .map(|&pos| map.request_chunk(pos, ChunkStatus::Full, ChunkTicketKind::Command))
+            .collect();
         let _guard = self.rt.enter();
-        for _ in 0..8192 {
+        for _ in 0..120_000 {
             map.tick_scheduling(GenerationTaskCap::RespectMaxCap);
-            if handle.poll() == ChunkRequestState::Ready {
-                return handle;
+            if handles.iter().all(|h| h.poll() == ChunkRequestState::Ready) {
+                return handles;
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        panic!("chunk {pos:?} never reached full");
+        panic!("{} chunks never reached full", all.len());
     }
 
     // mirror of the private Server::tick_chunk_sending, public pieces only

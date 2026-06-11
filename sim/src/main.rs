@@ -7,7 +7,7 @@ use sim::gym::Sim;
 use sim::transport::Transport;
 
 // covers the stride 4 far grid with margin
-const VIEW: u8 = 4;
+const VIEW: u8 = 3;
 
 struct Args {
     shm:     PathBuf,

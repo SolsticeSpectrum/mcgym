@@ -1,51 +1,88 @@
 //! observation extraction, azalea ecs + shared client world -> schema Obs
 
+use std::sync::Arc;
+
 use azalea_client::local_player::{Hunger, WorldHolder};
-use azalea_core::position::BlockPos;
-use azalea_entity::metadata::Health;
+use azalea_core::position::{BlockPos, ChunkBlockPos, ChunkPos};
 use azalea_entity::inventory::Inventory;
+use azalea_entity::metadata::Health;
 use azalea_entity::{LookDirection, Physics, Position};
 use azalea_inventory::ItemStack;
-use azalea_world::World;
+use azalea_world::{Chunk, World};
+use bevy_ecs::entity::Entity;
+use parking_lot::RwLock;
 
-use crate::client::Swarm;
 use crate::registry::Registry;
 use crate::schema::{BOUNDS_DIMS, INVENTORY_SLOTS, Obs, VOXEL_EDGE, VOXEL_FAR_STRIDE, VOXEL_RADIUS};
 
 const EYE_HEIGHT:      f64 = 1.62;
 pub const BLOCK_REACH: f64 = 4.5;
 
-// near and far grids share the same y z x cell order as the java gym
-fn fill_voxels(world: &World, reg: &Registry, c: BlockPos, stride: i32, out: &mut [i32]) {
-    let r = VOXEL_RADIUS as i32;
-    let mut at = 0;
-    for dy in -r..=r {
-        for dz in -r..=r {
-            for dx in -r..=r {
-                let pos = BlockPos::new(c.x + dx * stride, c.y + dy * stride, c.z + dz * stride);
-                out[at] = world
-                    .chunks
-                    .get_block_state(pos)
-                    .map_or(0, |s| reg.block(s));
-                at += 1;
+const R: i32 = VOXEL_RADIUS as i32;
+const E: i32 = VOXEL_EDGE as i32;
+
+#[inline]
+fn cell_index(dx: i32, dy: i32, dz: i32) -> usize {
+    ((((dy + R) * E) + (dz + R)) * E + (dx + R)) as usize
+}
+
+// near grid, blocks and bounds in one pass, one chunk lock per overlapped chunk
+fn fill_near(world: &World, reg: &Registry, c: BlockPos, blocks: &mut [i32], bounds: &mut [u8]) {
+    let min_y = world.chunks.min_y();
+    for ccx in (c.x - R) >> 4..=(c.x + R) >> 4 {
+        for ccz in (c.z - R) >> 4..=(c.z + R) >> 4 {
+            let Some(chunk) = world.chunks.get(&ChunkPos::new(ccx, ccz)) else {
+                continue; // unloaded stays air
+            };
+            let chunk = chunk.read();
+
+            let x0 = (c.x - R).max(ccx * 16);
+            let x1 = (c.x + R).min(ccx * 16 + 15);
+            let z0 = (c.z - R).max(ccz * 16);
+            let z1 = (c.z + R).min(ccz * 16 + 15);
+            for y in c.y - R..=c.y + R {
+                for z in z0..=z1 {
+                    for x in x0..=x1 {
+                        let Some(state) =
+                            chunk.get_block_state(&ChunkBlockPos::from(&BlockPos::new(x, y, z)), min_y)
+                        else {
+                            continue;
+                        };
+                        let at     = cell_index(x - c.x, y - c.y, z - c.z);
+                        blocks[at] = reg.block(state);
+                        bounds[at * BOUNDS_DIMS..at * BOUNDS_DIMS + BOUNDS_DIMS]
+                            .copy_from_slice(reg.bounds(state));
+                    }
+                }
             }
         }
     }
 }
 
-fn fill_bounds(world: &World, reg: &Registry, c: BlockPos, out: &mut [u8]) {
-    let r = VOXEL_RADIUS as i32;
+// far shell, stride 4, chunk arc cached between neighbouring cells
+fn fill_far(world: &World, reg: &Registry, c: BlockPos, out: &mut [i32]) {
+    let min_y = world.chunks.min_y();
+    let mut last: (i32, i32, Option<Arc<RwLock<Chunk>>>) = (i32::MIN, i32::MIN, None);
     let mut at = 0;
-    for dy in -r..=r {
-        for dz in -r..=r {
-            for dx in -r..=r {
-                let pos = BlockPos::new(c.x + dx, c.y + dy, c.z + dz);
-                let cell = world
-                    .chunks
-                    .get_block_state(pos)
-                    .map_or([0; BOUNDS_DIMS], |s| *reg.bounds(s));
-                out[at..at + BOUNDS_DIMS].copy_from_slice(&cell);
-                at += BOUNDS_DIMS;
+    for dy in -R..=R {
+        for dz in -R..=R {
+            for dx in -R..=R {
+                let pos = BlockPos::new(
+                    c.x + dx * VOXEL_FAR_STRIDE,
+                    c.y + dy * VOXEL_FAR_STRIDE,
+                    c.z + dz * VOXEL_FAR_STRIDE,
+                );
+                let (ccx, ccz) = (pos.x >> 4, pos.z >> 4);
+                if (ccx, ccz) != (last.0, last.1) {
+                    last = (ccx, ccz, world.chunks.get(&ChunkPos::new(ccx, ccz)));
+                }
+                out[at] = last.2.as_ref().map_or(0, |chunk| {
+                    chunk
+                        .read()
+                        .get_block_state(&ChunkBlockPos::from(&pos), min_y)
+                        .map_or(0, |s| reg.block(s))
+                });
+                at += 1;
             }
         }
     }
@@ -132,14 +169,14 @@ fn fill_inventory(menu: &azalea_inventory::Menu, reg: &Registry, ids: &mut [i32;
 }
 
 // entity slots stay zero until mobs land in the obs contract
-pub fn build_obs(swarm: &Swarm, reg: &Registry, i: usize, tick: i64) -> Obs {
-    let pos:    Position      = swarm.get(i);
-    let phys:   Physics       = swarm.get(i);
-    let look:   LookDirection = swarm.get(i);
-    let health: Health        = swarm.get(i);
-    let hunger: Hunger        = swarm.get(i);
-    let inv:    Inventory     = swarm.get(i);
-    let holder: WorldHolder   = swarm.get(i);
+pub fn build_obs(ecs: &bevy_ecs::world::World, id: Entity, reg: &Registry, i: usize, tick: i64) -> Obs {
+    let pos    = ecs.get::<Position>(id).expect("position");
+    let phys   = ecs.get::<Physics>(id).expect("physics");
+    let look   = ecs.get::<LookDirection>(id).expect("look");
+    let health = ecs.get::<Health>(id).expect("health");
+    let hunger = ecs.get::<Hunger>(id).expect("hunger");
+    let inv    = ecs.get::<Inventory>(id).expect("inventory");
+    let holder = ecs.get::<WorldHolder>(id).expect("world holder");
 
     let mut o = Obs {
         tick,
@@ -149,7 +186,7 @@ pub fn build_obs(swarm: &Swarm, reg: &Registry, i: usize, tick: i64) -> Obs {
         yaw:           look.y_rot(),
         pitch:         look.x_rot(),
         on_ground:     u8::from(phys.on_ground()),
-        health:        *health,
+        health:        **health,
         food:          hunger.food as f32,
         selected_slot: inv.selected_hotbar_slot,
         ..Default::default()
@@ -157,9 +194,8 @@ pub fn build_obs(swarm: &Swarm, reg: &Registry, i: usize, tick: i64) -> Obs {
 
     let world  = holder.shared.read();
     let center = BlockPos::new(pos.x.floor() as i32, pos.y.floor() as i32, pos.z.floor() as i32);
-    fill_voxels(&world, reg, center, 1,                &mut o.voxel_blocks);
-    fill_voxels(&world, reg, center, VOXEL_FAR_STRIDE, &mut o.voxel_far);
-    fill_bounds(&world, reg, center, &mut o.voxel_bounds);
+    fill_near(&world, reg, center, &mut o.voxel_blocks, &mut o.voxel_bounds);
+    fill_far(&world, reg, center, &mut o.voxel_far);
 
     let eye = [pos.x, pos.y + EYE_HEIGHT, pos.z];
     if let Some((hit, face, dist)) = raycast(&world, reg, eye, look_dir(o.yaw, o.pitch), BLOCK_REACH) {

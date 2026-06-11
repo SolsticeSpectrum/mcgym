@@ -154,36 +154,46 @@ impl Sim {
         self.ref_xz[i] = [pos.x, pos.z];
     }
 
-    // pump packets without client physics until the pipe runs dry, chunks stream in here
+    // pump packets without client physics until every client stands in a loaded chunk
     fn settle(&mut self) {
-        let mut idle = 0;
-        for round in 0..SETTLE_MAX {
+        let mut ready = 0;
+        for _ in 0..SETTLE_MAX {
             self.steel.tick();
             self.steel.send_chunks(&self.players);
 
-            let mut moved = false;
             for i in 0..self.n {
-                let frames = self.bridges[i].drain();
+                let frames: Vec<Arc<_>> =
+                    self.bridges[i].drain().into_iter().map(|p| p.encoded_data).collect();
                 if !frames.is_empty() {
-                    moved = true;
-                    let frames: Vec<Arc<_>> = frames.into_iter().map(|p| p.encoded_data).collect();
                     self.swarm.inject(i, &frames);
                 }
             }
             self.swarm.update();
             for i in 0..self.n {
                 for (id, payload) in self.swarm.outbox(i) {
-                    moved = true;
                     self.steel.apply(&self.players[i], id, &payload).expect("apply packet");
                 }
             }
 
-            idle = if moved { 0 } else { idle + 1 };
-            if idle >= 8 && round >= 16 {
+            let landed = (0..self.n).all(|i| {
+                let Some(pos) = self.swarm.try_get::<azalea_entity::Position>(i) else {
+                    return false;
+                };
+                let Some(holder) = self.swarm.try_get::<azalea_client::local_player::WorldHolder>(i) else {
+                    return false;
+                };
+                let chunk = azalea_core::position::ChunkPos::from(
+                    &azalea_core::position::BlockPos::new(pos.x as i32, pos.y as i32, pos.z as i32));
+                holder.shared.read().chunks.get(&chunk).is_some()
+            });
+
+            // a grace lap so inventory and entity sync land too
+            ready = if landed { ready + 1 } else { 0 };
+            if ready >= 8 {
                 return;
             }
         }
-        panic!("settle never drained, world streaming is stuck");
+        panic!("settle starved, clients never landed in loaded chunks");
     }
 
     fn teleport(&mut self, i: usize, pos: DVec3, yaw: f32) {
@@ -207,12 +217,14 @@ impl Sim {
     fn forest_spawn(&mut self, i: usize) -> (DVec3, f32) {
         let (home, _) = self.homes[i];
         let (ax, az)  = (home.x as i32, home.z as i32);
+        let mut area  = Vec::with_capacity(25);
         for dcx in -2..=2 {
             for dcz in -2..=2 {
-                // player tickets take over once the agent stands here, handle can drop
-                let _ = self.steel.ensure(steel_utils::types::ChunkPos::new((ax >> 4) + dcx, (az >> 4) + dcz));
+                area.push(steel_utils::types::ChunkPos::new((ax >> 4) + dcx, (az >> 4) + dcz));
             }
         }
+        // player tickets take over once the agent stands here, handles can drop
+        let _ = self.steel.ensure_all(&area);
         crate::spawn::forest(&self.steel, ax, az)
     }
 
@@ -265,11 +277,21 @@ impl Sim {
         }
     }
 
+    // read only over the shared client world, agents fan out across cores
     fn write_all_obs(&self, obs: &mut [u8]) {
-        for i in 0..self.n {
-            let o = build_obs(&self.swarm, &self.reg, i, self.tick);
-            o.encode_into(&mut obs[i * OBS_NBYTES..(i + 1) * OBS_NBYTES]);
-        }
+        let ecs   = self.swarm.app.world();
+        let tick  = self.tick;
+        let reg   = &self.reg;
+        let ids   = &self.swarm.ids;
+        let slots: Vec<&mut [u8]> = obs.chunks_mut(OBS_NBYTES).take(self.n).collect();
+        std::thread::scope(|scope| {
+            for (i, slot) in slots.into_iter().enumerate() {
+                let id = ids[i];
+                scope.spawn(move || {
+                    build_obs(ecs, id, reg, i, tick).encode_into(slot);
+                });
+            }
+        });
     }
 }
 

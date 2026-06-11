@@ -21,7 +21,7 @@ def golden_obs_record() -> dict:
         # varied bounded block ids
         "voxel_blocks":    (np.arange(edge3, dtype="<i4") % 97),
         "voxel_far":       (np.arange(edge3, dtype="<i4") % 89),
-        "voxel_bounds":    (np.arange(edge3 * 6, dtype="u1") % 25).reshape(edge3, 6),
+        "voxel_bounds":    (np.arange(edge3 * 6) % 25).astype("u1").reshape(edge3, 6),
         "target_block":    42,
         "target_face":     2,
         "target_distance": 2.75,

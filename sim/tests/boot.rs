@@ -11,6 +11,7 @@ fn boot_walk() {
     sim.reset(&mut obs);
 
     let o = Obs::decode(&obs[..OBS_NBYTES]);
+    eprintln!("agent at {:?} yaw {} health {} food {}", o.pos, o.yaw, o.health, o.food);
     assert_eq!(o.schema_version, 2);
     assert!(o.pos[1] > 0.0, "agent must stand on terrain, got y={}", o.pos[1]);
     let ground: usize = o.voxel_blocks.iter().filter(|&&b| b != 0).count();

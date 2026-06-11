@@ -21,7 +21,8 @@ fn name(steel: &Steel, x: i32, y: i32, z: i32) -> &'static str {
 }
 
 fn airy(n: &str) -> bool {
-    n == "air" || n == "cave_air" || n == "short_grass" || n == "tall_grass" || n == "fern"
+    n == "air" || n == "cave_air" || n == "void_air"
+        || n == "short_grass" || n == "tall_grass" || n == "fern"
 }
 
 fn tree(n: &str) -> bool {

@@ -39,7 +39,7 @@ fn nearest_log(o: &Obs, logs: &[i32]) -> Option<[i32; 3]> {
 #[test]
 fn mine_log() {
     let logs    = log_ids();
-    let mut sim = Sim::new(1, 7, 64, 4);
+    let mut sim = Sim::new(1, 3, 64, 4);
     let mut obs = vec![0u8; OBS_NBYTES];
     sim.reset(&mut obs);
 
