@@ -8,7 +8,7 @@ import numpy as np
 from mcgym.schema import codec, spec
 
 HEADER = 64
-MAGIC  = 0x4D434149
+MAGIC  = 0x4D434759
 
 RESET = 1
 STEP  = 2

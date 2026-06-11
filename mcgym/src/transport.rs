@@ -10,14 +10,14 @@ use memmap2::MmapMut;
 use crate::schema::{ACTION_NBYTES, OBS_NBYTES, SCHEMA_VERSION};
 
 pub const HEADER_NBYTES: usize = 64;
-pub const MAGIC:           i32 = 0x4D43_4149; // 'MCAI'
+pub const MAGIC:           i32 = 0x4D43_4759; // 'MCGY'
 
 pub const CMD_RESET:        u8 = 1;
 pub const CMD_STEP:         u8 = 2;
 pub const CMD_CLOSE:        u8 = 3;
 pub const REPLY_OK:         u8 = 1;
 
-pub const READY_LINE:     &str = "MCAI_TRANSPORT_READY";
+pub const READY_LINE:     &str = "MCGYM_TRANSPORT_READY";
 
 // actions is the whole ACTION region, obs is the whole OBS region (write it fully)
 pub trait Gym {

@@ -1,4 +1,4 @@
-//! obs/action byte layout, the cross language contract (schema/mcai_schema.yaml v1)
+//! obs/action byte layout, the cross language contract (schema/mcgym_schema.yaml v1)
 
 pub const SCHEMA_VERSION:      i32 = 1;
 

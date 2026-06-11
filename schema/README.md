@@ -1,6 +1,6 @@
 # schema
 
-`mcai_schema.yaml` is the single source of truth for the obs/action binary layout
+`mcgym_schema.yaml` is the single source of truth for the obs/action binary layout
 shared by the gym, the trainer and the fabric mod.
 
 - layout is ordered, packed, little endian, python parses it into a numpy

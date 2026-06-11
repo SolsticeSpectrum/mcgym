@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-MAGIC = 0x4D434149
+MAGIC = 0x4D434759
 CMD_RESET, CMD_STEP, CMD_CLOSE, REPLY_OK = b"\x01", b"\x02", b"\x03", 1
 
 
@@ -29,7 +29,7 @@ def main() -> None:
 
     boot = time.monotonic()
     for line in proc.stdout:
-        if "MCAI_TRANSPORT_READY" in line:
+        if "MCGYM_TRANSPORT_READY" in line:
             break
     else:
         raise SystemExit("gym never became ready")

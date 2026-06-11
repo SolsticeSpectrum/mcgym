@@ -1,4 +1,4 @@
-//! pumpkin block/item ids to mcai schema registry ints, registry.json embedded at build time
+//! pumpkin block/item ids to mcgym schema registry ints, registry.json embedded at build time
 
 use std::collections::HashMap;
 
@@ -13,7 +13,7 @@ pub struct Registry {
     state_to_block: Vec<i32>,             // by block state id, 0 = air
     block_by_name:  HashMap<String, i32>, // "minecraft:oak_log" -> int
     item_by_name:   HashMap<String, i32>,
-    unmapped:       usize,                // pumpkin names with no mcai entry
+    unmapped:       usize,                // pumpkin names with no mcgym entry
 }
 
 impl Registry {

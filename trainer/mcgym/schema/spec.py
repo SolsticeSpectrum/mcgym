@@ -1,10 +1,10 @@
-"""parse schema/mcai_schema.yaml into packed little endian dtypes, the canonical wire format"""
+"""parse schema/mcgym_schema.yaml into packed little endian dtypes, the canonical wire format"""
 import pathlib
 
 import numpy as np
 import yaml
 
-_SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[3] / "schema" / "mcai_schema.yaml"
+_SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[3] / "schema" / "mcgym_schema.yaml"
 
 _DTYPE_MAP = {
     "i16": "<i2",

@@ -20,21 +20,9 @@ only `/drive2` (the DATA_DIR mount) survives a recreate
 
 ```
 tools/       rustup + cargo + venv + caches
-mcai/        repo clone, re cloned on boot, keep no state here
+mcgym/       repo clone, re cloned on boot, keep no state here
 runs/        checkpoints per task
 xgl-ssh/     dropbear host key + cached debs
 mcgym-init/  files written by the init service
 train.log    training output
 ```
-
-## quirks
-
-- private repo, put a github pat in REPO_URL
-- host networking, the compose ports section is decorative, port 22 on the
-  host ip is the host vm not the container
-- no real root in the image, sudo is fakeroot, real sudo is sudo-root with
-  the container password, openssh cannot run there hence dropbear
-- rollout buffers need ~21 GB at 2048 agents and 32 gyms want a core each,
-  raise MEM_LIMIT and CPUS if the host has headroom
-- knob change, edit `.env`, `docker compose up -d`, then
-  `docker exec xgl supervisorctl restart mcgym-train`
