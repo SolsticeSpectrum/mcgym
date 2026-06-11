@@ -1,10 +1,13 @@
-//! mcgym binary, boots the Pumpkin backed world and serves the trainer over shm + uds
+//! sim binary, boots the steel + azalea pair and serves the trainer over shm + uds
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use mcgym::gym::GymState;
-use mcgym::transport::Transport;
+use sim::gym::Sim;
+use sim::transport::Transport;
+
+// covers the stride 4 far grid with margin
+const VIEW: u8 = 4;
 
 struct Args {
     shm:     PathBuf,
@@ -74,13 +77,13 @@ fn run() -> Result<(), String> {
     }
 
     let mut gym = if let Some(dir) = &args.world {
-        eprintln!("[mcgym] booting {} agents on map {}", args.agents, dir.display());
-        GymState::fixed(args.agents, dir,
-                        [args.spawn[0], args.spawn[1], args.spawn[2]],
-                        args.spawn[3] as f32, args.mining)
+        eprintln!("[sim] booting {} agents on map {}", args.agents, dir.display());
+        Sim::fixed(args.agents, dir,
+                   [args.spawn[0], args.spawn[1], args.spawn[2]],
+                   args.spawn[3] as f32, args.mining, VIEW)
     } else {
-        eprintln!("[mcgym] booting {} agents (seed={} spacing={})", args.agents, args.seed, args.spacing);
-        GymState::new(args.agents, args.seed, args.spacing)
+        eprintln!("[sim] booting {} agents (seed={} spacing={})", args.agents, args.seed, args.spacing);
+        Sim::new(args.agents, args.seed, args.spacing, VIEW)
     };
 
     let mut transport = Transport::create(&args.shm, &args.sock, args.agents)
@@ -94,7 +97,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("[mcgym] error: {e}");
+            eprintln!("[sim] error: {e}");
             ExitCode::FAILURE
         }
     }

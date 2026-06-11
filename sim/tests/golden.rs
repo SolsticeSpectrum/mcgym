@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use mcgym::schema::{Action, INVENTORY_SLOTS, MAX_ENTITIES, Obs, VOXEL_CELLS};
+use sim::schema::{Action, INVENTORY_SLOTS, MAX_ENTITIES, Obs, VOXEL_CELLS};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

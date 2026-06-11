@@ -84,7 +84,9 @@ class Monitor:
         rem   = nz % (edge * edge)
         dz    = rem // edge - r
         dx    = rem % edge - r
-        cells = np.stack([dx, dy, dz, vox[nz]], axis=1).astype(int).tolist()
+        # collision aabb in 16ths rides along, the client draws real block shapes
+        box   = o["voxel_bounds"][nz].astype(int)
+        cells = np.hstack([np.stack([dx, dy, dz, vox[nz]], axis=1).astype(int), box]).tolist()
 
         # target block pos from the look ray and hit distance, eye is 1.62 up
         yaw    = np.deg2rad(float(o["yaw"]))
