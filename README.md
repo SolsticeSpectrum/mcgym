@@ -47,7 +47,7 @@ vanilla packet timing.
 
 ## Schema
 
-The gym, trainer and mod share one binary contract, `schema/mcai_schema.yaml`.
+The gym, trainer and mod share one binary contract, `schema/mcgym_schema.yaml`.
 Golden fixtures pin the bytes, every implementation must reproduce them, see
 `schema/README.md`. Ids map by resource name so client registry order never matters.
 

@@ -103,8 +103,8 @@ def test_mining_e2e():
     seed     = 0
     registry = Registry.load(REGISTRY)
 
-    tmpdir    = tempfile.mkdtemp(prefix="mcai_sock_")
-    shm_path  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+    tmpdir    = tempfile.mkdtemp(prefix="mcgym_sock_")
+    shm_path  = f"/dev/shm/mcgym_shm_{uuid.uuid4().hex}.bin"
     sock_path = str(pathlib.Path(tmpdir) / "gym.sock")
 
     proc = launch(agents, seed, shm_path, sock_path)
@@ -165,8 +165,9 @@ def test_mining_e2e():
 
         items    = np.asarray(proof[0]["inv_item_id"])
         counts   = np.asarray(proof[0]["inv_count"])
+        names    = {v: k for k, v in registry.item_ids().items()}
         gathered = [
-            (registry.name_of(int(it)), int(c))
+            (names[int(it)], int(c))
             for it, c in zip(items, counts)
             if int(it) != 0 and int(c) > 0
         ]

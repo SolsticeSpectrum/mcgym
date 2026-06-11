@@ -22,8 +22,8 @@ class Env:
         self.agents = agents
         self.task   = task
 
-        self._tmp  = tempfile.mkdtemp(prefix="mcai_env_")
-        self._shm  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+        self._tmp  = tempfile.mkdtemp(prefix="mcgym_env_")
+        self._shm  = f"/dev/shm/mcgym_shm_{uuid.uuid4().hex}.bin"
         self._sock = str(pathlib.Path(self._tmp) / "gym.sock")
 
         self._proc     = launch(agents, seed, self._shm, self._sock, timeout=timeout)
