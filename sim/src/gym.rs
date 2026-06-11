@@ -27,6 +27,7 @@ const SETTLE_MAX: usize = 4096;
 
 pub struct Sim {
     steel:    Steel,
+    threads:  usize,
     tickets:  Vec<steel_core::chunk::chunk_request::ChunkRequestHandle>,
     swarm:    Swarm,
     players:  Vec<Arc<Player>>,
@@ -41,6 +42,10 @@ pub struct Sim {
     ref_xz:   Vec<[f64; 2]>,
     progress: Vec<i64>,
     wood:     Vec<i32>,
+}
+
+fn default_threads() -> usize {
+    std::thread::available_parallelism().map_or(8, |c| c.get())
 }
 
 fn dir8(forward: f32, strafe: f32) -> WalkDirection {
@@ -64,8 +69,12 @@ fn dir8(forward: f32, strafe: f32) -> WalkDirection {
 impl Sim {
     // worldgen mode, forest homes on a spacing grid
     pub fn new(n: usize, seed: i64, spacing: i32, view: u8) -> Self {
+        Self::new_threaded(n, seed, spacing, view, default_threads())
+    }
+
+    pub fn new_threaded(n: usize, seed: i64, spacing: i32, view: u8, threads: usize) -> Self {
         let steel = Steel::boot("minecraft:overworld", seed, view);
-        let mut sim = Self::assemble(steel, n, view, true, true, spacing);
+        let mut sim = Self::assemble(steel, n, threads, true, true, spacing);
 
         // provisional skydrop joins pull chunk tickets at each home column
         let side = (n as f64).sqrt().ceil() as i32;
@@ -89,9 +98,15 @@ impl Sim {
 
     // loaded map mode, blocks first so chunk streaming carries them, every agent on one spawn
     pub fn fixed(n: usize, dir: &std::path::Path, spawn: [f64; 3], yaw: f32, mining: bool, view: u8) -> Self {
+        Self::fixed_threaded(n, dir, spawn, yaw, mining, view, default_threads())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fixed_threaded(n: usize, dir: &std::path::Path, spawn: [f64; 3], yaw: f32,
+                          mining: bool, view: u8, threads: usize) -> Self {
         let steel   = Steel::boot("steel:empty", 0, view);
         let tickets = crate::anvil::load(&steel, dir);
-        let mut sim = Self::assemble(steel, n, view, mining, false, 0);
+        let mut sim = Self::assemble(steel, n, threads, mining, false, 0);
         sim.tickets = tickets;
 
         let pos = DVec3::new(spawn[0], spawn[1], spawn[2]);
@@ -102,10 +117,11 @@ impl Sim {
         sim
     }
 
-    fn assemble(steel: Steel, n: usize, _view: u8, mining: bool, roam: bool, spacing: i32) -> Self {
+    fn assemble(steel: Steel, n: usize, threads: usize, mining: bool, roam: bool, spacing: i32) -> Self {
         let swarm = Swarm::new(n);
         let mut sim = Self {
             steel,
+            threads,
             tickets:  Vec::new(),
             swarm,
             players:  Vec::with_capacity(n),
@@ -277,18 +293,23 @@ impl Sim {
         }
     }
 
-    // read only over the shared client world, agents fan out across cores
+    // read only over the shared client world, round robin over the thread budget
     fn write_all_obs(&self, obs: &mut [u8]) {
         let ecs   = self.swarm.app.world();
         let tick  = self.tick;
         let reg   = &self.reg;
         let ids   = &self.swarm.ids;
-        let slots: Vec<&mut [u8]> = obs.chunks_mut(OBS_NBYTES).take(self.n).collect();
+        let lanes = self.threads.min(self.n).max(1);
+        let mut by_lane: Vec<Vec<(usize, &mut [u8])>> = (0..lanes).map(|_| Vec::new()).collect();
+        for (i, slot) in obs.chunks_mut(OBS_NBYTES).take(self.n).enumerate() {
+            by_lane[i % lanes].push((i, slot));
+        }
         std::thread::scope(|scope| {
-            for (i, slot) in slots.into_iter().enumerate() {
-                let id = ids[i];
+            for lane in by_lane {
                 scope.spawn(move || {
-                    build_obs(ecs, id, reg, i, tick).encode_into(slot);
+                    for (i, slot) in lane {
+                        build_obs(ecs, ids[i], reg, i, tick).encode_into(slot);
+                    }
                 });
             }
         });

@@ -32,6 +32,9 @@ def launch(agents: int, seed: int, shm: str, sock: str, timeout: float = 180.0,
         "--seed", str(seed),
         "--spacing", os.environ.get("SIM_SPACING", "128"),
     ]
+    threads = os.environ.get("SIM_THREADS")
+    if threads:
+        cmd += ["--threads", threads]
     if world:
         if spawn is None:
             raise RuntimeError(f"task world {world} needs a spawn")

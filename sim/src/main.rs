@@ -18,6 +18,7 @@ struct Args {
     world:   Option<PathBuf>, // loaded map instead of worldgen
     spawn:   [f64; 4],        // x y z yaw for loaded maps
     mining:  bool,
+    threads: usize,           // obs worker lanes, cap when many sims share a box
 }
 
 fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
@@ -29,6 +30,7 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
     let mut world   = None;
     let mut spawn   = None;
     let mut mining  = true;
+    let mut threads = std::thread::available_parallelism().map_or(8, |c| c.get());
 
     while let Some(flag) = args.next() {
         let mut val = || args.next().ok_or_else(|| format!("missing value for {flag}"));
@@ -50,6 +52,7 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
                 spawn = Some([v[0], v[1], v[2], v[3]]);
             }
             "--mining"  => mining  = val()?.parse::<u8>().map_err(|e| format!("--mining: {e}"))? != 0,
+            "--threads" => threads = val()?.parse().map_err(|e| format!("--threads: {e}"))?,
             other       => return Err(format!("unknown argument {other}")),
         }
     }
@@ -67,6 +70,7 @@ fn parse(args: &mut dyn Iterator<Item = String>) -> Result<Args, String> {
         world,
         spawn:   spawn.unwrap_or([0.0; 4]),
         mining,
+        threads,
     })
 }
 
@@ -78,12 +82,12 @@ fn run() -> Result<(), String> {
 
     let mut gym = if let Some(dir) = &args.world {
         eprintln!("[sim] booting {} agents on map {}", args.agents, dir.display());
-        Sim::fixed(args.agents, dir,
-                   [args.spawn[0], args.spawn[1], args.spawn[2]],
-                   args.spawn[3] as f32, args.mining, VIEW)
+        Sim::fixed_threaded(args.agents, dir,
+                             [args.spawn[0], args.spawn[1], args.spawn[2]],
+                             args.spawn[3] as f32, args.mining, VIEW, args.threads)
     } else {
         eprintln!("[sim] booting {} agents (seed={} spacing={})", args.agents, args.seed, args.spacing);
-        Sim::new(args.agents, args.seed, args.spacing, VIEW)
+        Sim::new_threaded(args.agents, args.seed, args.spacing, VIEW, args.threads)
     };
 
     let mut transport = Transport::create(&args.shm, &args.sock, args.agents)
