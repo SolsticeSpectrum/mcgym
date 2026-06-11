@@ -7,7 +7,7 @@ SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "mcgym_sc
 
 def test_schema_yaml_loads_and_has_expected_top_keys():
     doc = yaml.safe_load(SCHEMA_PATH.read_text())
-    assert doc["schema_version"] == 1
+    assert doc["schema_version"] == 2
     assert set(doc.keys()) == {"schema_version", "params", "observation", "action"}
     assert doc["params"]["voxel_radius"] == 8
     assert doc["params"]["voxel_far_stride"] == 4

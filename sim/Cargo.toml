@@ -1,0 +1,56 @@
+[package]
+name = "sim"
+version = "0.1.0"
+edition = "2024"
+description = "headless vanilla sim, steel server + azalea clients lockstepped in one process"
+
+[lib]
+name = "sim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sim"
+path = "src/main.rs"
+
+[dependencies]
+steel-core     = { git = "https://github.com/Steel-Foundation/SteelMC", rev = "571091ad88c4640e3beab29c3319be7b45c5b592" }
+steel-protocol = { git = "https://github.com/Steel-Foundation/SteelMC", rev = "571091ad88c4640e3beab29c3319be7b45c5b592" }
+steel-registry = { git = "https://github.com/Steel-Foundation/SteelMC", rev = "571091ad88c4640e3beab29c3319be7b45c5b592" }
+steel-utils    = { git = "https://github.com/Steel-Foundation/SteelMC", rev = "571091ad88c4640e3beab29c3319be7b45c5b592" }
+
+azalea-client    = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-protocol  = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-core      = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-entity    = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-world     = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-physics   = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-block     = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-registry  = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-inventory = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-auth      = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+azalea-buf       = { git = "https://github.com/azalea-rs/azalea", rev = "8a32e091ad1131369fb70a518e23c0541740d2b8" }
+
+text_components = { git = "https://github.com/Steel-Foundation/TextComponents.git" }
+tokio-util      = "0.7"
+glam            = "0.32"
+rustc-hash      = "2"
+
+bevy_app    = "0.18.1"
+bevy_log    = "0.18"
+bevy_ecs    = { version = "0.18.1", default-features = false }
+tokio       = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+parking_lot = "0.12"
+uuid        = "1"
+memmap2     = "0.9"
+flate2      = "1"
+simdnbt     = "0.10"
+serde_json  = "1"
+toml        = "0.8"
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+
+[dev-dependencies]
+tempfile = "3"

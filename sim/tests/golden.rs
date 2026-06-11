@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use mcgym::schema::{Action, INVENTORY_SLOTS, MAX_ENTITIES, Obs, VOXEL_CELLS};
+use sim::schema::{Action, INVENTORY_SLOTS, MAX_ENTITIES, Obs, VOXEL_CELLS};
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -28,6 +28,7 @@ fn golden_obs() -> Obs {
         selected_slot:   4,
         voxel_blocks:    (0..VOXEL_CELLS as i32).map(|i| i % 97).collect(),
         voxel_far:       (0..VOXEL_CELLS as i32).map(|i| i % 89).collect(),
+        voxel_bounds:    (0..VOXEL_CELLS * 6).map(|i| (i % 25) as u8).collect(),
         target_block:    42,
         target_face:     2,
         target_distance: 2.75,
@@ -72,7 +73,9 @@ fn obs_matches_golden_bytes() {
     let want = fixture("golden_obs.bin");
     let got  = golden_obs().encode();
     assert_eq!(got.len(), want.len(), "obs byte length");
-    assert_eq!(got, want, "obs bytes diverge from canonical golden fixture");
+    if let Some(i) = (0..got.len()).find(|&i| got[i] != want[i]) {
+        panic!("obs bytes diverge at {i}, got {} want {}", got[i], want[i]);
+    }
 }
 
 #[test]

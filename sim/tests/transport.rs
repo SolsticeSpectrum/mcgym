@@ -6,8 +6,8 @@ use std::thread;
 use std::time::Duration;
 
 use memmap2::Mmap;
-use mcgym::schema::{ACTION_NBYTES, Action, OBS_NBYTES, Obs};
-use mcgym::transport::{
+use sim::schema::{ACTION_NBYTES, Action, OBS_NBYTES, Obs, SCHEMA_VERSION};
+use sim::transport::{
     CMD_CLOSE, CMD_RESET, CMD_STEP, HEADER_NBYTES, MAGIC, REPLY_OK, Transport, Gym,
 };
 
@@ -73,7 +73,7 @@ fn transport_round_trip() {
 
     // header checks (mirror ShmTransport.__init__)
     assert_eq!(i32::from_le_bytes(map[0..4] .try_into().unwrap()), MAGIC);
-    assert_eq!(i32::from_le_bytes(map[4..8] .try_into().unwrap()), 1);
+    assert_eq!(i32::from_le_bytes(map[4..8] .try_into().unwrap()), SCHEMA_VERSION);
     assert_eq!(i32::from_le_bytes(map[8..12].try_into().unwrap()), N as i32);
 
     let obs_off = HEADER_NBYTES + N * ACTION_NBYTES;

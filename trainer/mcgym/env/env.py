@@ -26,7 +26,8 @@ class Env:
         self._shm  = f"/dev/shm/mcgym_shm_{uuid.uuid4().hex}.bin"
         self._sock = str(pathlib.Path(self._tmp) / "gym.sock")
 
-        self._proc     = launch(agents, seed, self._shm, self._sock, timeout=timeout)
+        self._proc     = launch(agents, seed, self._shm, self._sock, timeout=timeout,
+                                world=task.world, spawn=task.spawn, mining=task.mining)
         self.transport = Transport(self._shm, self._sock, agents)
 
         self._step = 0

@@ -6,14 +6,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."  # -> trainer/
 
 REPO="$(cd .. && pwd)"
-export MCGYM="${MCGYM:-$REPO/mcgym/target/release/mcgym}"
-export MCGYM_SPACING="${MCGYM_SPACING:-128}"  # blocks between agents within a gym
+export SIM="${SIM:-$REPO/sim/target/release/sim}"
+export SIM_SPACING="${SIM_SPACING:-128}"  # blocks between agents within a sim
 export MCGYM_BF16="${MCGYM_BF16:-1}"
 export MCGYM_COMPILE="${MCGYM_COMPILE:-1}"
 export PYTHONUNBUFFERED=1
 
-if [[ ! -x "$MCGYM" ]]; then
-  echo "mcgym binary not found at $MCGYM, build it with cargo build --release" >&2
+if [[ ! -x "$SIM" ]]; then
+  echo "sim binary not found at $SIM, build it with cargo build --release" >&2
   exit 1
 fi
 

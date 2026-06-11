@@ -5,15 +5,27 @@ import type { Agent, Palette } from '../types.ts'
 export const WATER = 35
 export const LAVA  = 36
 
+// face corners as lo/hi picks so any aabb renders, 0 = lo, 1 = hi
 const FACES = [
-    { n: [1, 0, 0],  c: [[0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]] },
-    { n: [-1, 0, 0], c: [[-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5]] },
-    { n: [0, 1, 0],  c: [[-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]] },
-    { n: [0, -1, 0], c: [[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5]] },
-    { n: [0, 0, 1],  c: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
-    { n: [0, 0, -1], c: [[0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]] },
+    { n: [1, 0, 0],  c: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
+    { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
+    { n: [0, 1, 0],  c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
+    { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+    { n: [0, 0, 1],  c: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
+    { n: [0, 0, -1], c: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
 ]
 const TRI = [0, 1, 2, 0, 2, 3]
+
+// collision aabb in 16ths, no collision renders as the full cube (water, plants)
+function aabb(cell: number[]): [number[], number[], boolean] {
+    const [x0, y0, z0, x1, y1, z1] = cell.length >= 10 ? cell.slice(4, 10) : []
+    if (!(x1 > x0)) return [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5], true]
+
+    const lo   = [x0 / 16 - 0.5, y0 / 16 - 0.5, z0 / 16 - 0.5]
+    const hi   = [x1 / 16 - 0.5, y1 / 16 - 0.5, z1 / 16 - 0.5]
+    const full = x0 === 0 && y0 === 0 && z0 === 0 && x1 === 16 && y1 === 16 && z1 === 16
+    return [lo, hi, full]
+}
 
 const key = (x: number, y: number, z: number) => (x + 8) + (y + 8) * 17 + (z + 8) * 289
 
@@ -42,24 +54,31 @@ export function scene(): Scene {
     root.add(new THREE.Mesh(geo, mat))
 
     function build(cells: number[][], palette: Palette) {
+        // only full cubes occlude, partial shapes keep all their faces
         const occ = new Set<number>()
-        for (const c of cells) occ.add(key(c[0], c[1], c[2]))
+        for (const c of cells) {
+            if (aabb(c)[2]) occ.add(key(c[0], c[1], c[2]))
+        }
 
         const pos: number[] = []
         const nor: number[] = []
         const col: number[] = []
         const tmp = new THREE.Color()
-        for (const [dx, dy, dz, id] of cells) {
+        for (const c of cells) {
+            const [dx, dy, dz, id] = c
+            const [lo, hi, full]   = aabb(c)
             tmp.set(palette[String(id)] || '#5a5a5a')
             for (const f of FACES) {
                 const [nx, ny, nz] = f.n
                 const bx = dx + nx, by = dy + ny, bz = dz + nz
                 const inside = bx >= -8 && bx <= 8 && by >= -8 && by <= 8 && bz >= -8 && bz <= 8
-                if (inside && occ.has(key(bx, by, bz))) continue
+                if (full && inside && occ.has(key(bx, by, bz))) continue
 
                 for (const vi of TRI) {
                     const v = f.c[vi]
-                    pos.push(dx + v[0], dy + v[1], dz + v[2])
+                    pos.push(dx + (v[0] ? hi[0] : lo[0]),
+                             dy + (v[1] ? hi[1] : lo[1]),
+                             dz + (v[2] ? hi[2] : lo[2]))
                     nor.push(nx, ny, nz)
                     col.push(tmp.r, tmp.g, tmp.b)
                 }

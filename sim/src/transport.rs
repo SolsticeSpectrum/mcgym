@@ -17,7 +17,7 @@ pub const CMD_STEP:         u8 = 2;
 pub const CMD_CLOSE:        u8 = 3;
 pub const REPLY_OK:         u8 = 1;
 
-pub const READY_LINE:     &str = "MCGYM_TRANSPORT_READY";
+pub const READY_LINE:     &str = "SIM_TRANSPORT_READY";
 
 // actions is the whole ACTION region, obs is the whole OBS region (write it fully)
 pub trait Gym {

@@ -1,15 +1,15 @@
 # MCGym
 
-RLGym but for Minecraft. A from scratch PPO stack with a fast headless gym
-built on Pumpkin, vanilla worldgen and physics. Trained policies run in a Fabric mod, 
-the agent sees only structured observations, no pixels.
+RLGym but for Minecraft. A from scratch PPO stack with a fast headless sim,
+a real SteelMC server and real azalea clients lockstepped in one process. Trained
+policies run in a Fabric mod, the agent sees only structured observations, no pixels.
 
 Currently learning to gather wood. The architecture is task driven.
 
 ## How it works
 
 ```
-mcgym/       rust gym, Pumpkin world sim behind a shm + unix socket transport
+sim/         rust sim, steel server + azalea client swarm behind a shm + unix socket transport
 trainer/     pytorch PPO
 schema/      single source of truth for the obs/action binary layout
 fabric-mod/  runs an exported onnx policy in the live client
@@ -17,17 +17,18 @@ frontend/    react + three.js training monitor
 docker/      fresh gpu box to running training
 ```
 
-One gym process is one world with N agents stepped in lockstep. The trainer talks
-to many gyms over shared memory, ticks them in parallel across cores and trains on
-gpu, 2048 agents at ~14.7k steps/s on one RTX 6000. Observations are a 17x17x17
-voxel grid around the agent plus a strided far shell, scalars and the inventory.
+One sim process is one server world with N azalea clients stepped in lockstep,
+client and server exchange real protocol bytes in memory, no sockets, no disk. The
+trainer talks to many sims over shared memory, ticks them in parallel across cores
+and trains on gpu. Observations are a 17x17x17 voxel grid around the agent with per
+block collision boxes, a strided far shell, scalars and the inventory.
 
 ## Train
 
 ```bash
-cd mcgym && cargo build --release
+cd sim && cargo build --release
 cd ../trainer && python -m venv .venv && .venv/bin/pip install torch -e .
-MCGYM=../mcgym/target/release/mcgym .venv/bin/python -m mcgym.train --task wood --agents 4 --monitor 9080
+SIM=../sim/target/release/sim .venv/bin/python -m mcgym.train --task wood --agents 4 --monitor 9080
 ```
 
 The monitor at http://localhost:9080 shows every agent live, per env minimaps,
