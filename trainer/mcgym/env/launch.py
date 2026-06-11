@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 
-READY = "MCAI_TRANSPORT_READY"
+READY = "MCGYM_TRANSPORT_READY"
 
 
 def _drain(stream) -> None:

@@ -2,7 +2,7 @@ import pathlib
 
 import yaml
 
-SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "mcai_schema.yaml"
+SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[2] / "schema" / "mcgym_schema.yaml"
 
 
 def test_schema_yaml_loads_and_has_expected_top_keys():

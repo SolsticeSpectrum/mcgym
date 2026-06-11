@@ -47,8 +47,8 @@ def test_transport_round_trip():
     
     assert air_id == 0
 
-    tmpdir    = tempfile.mkdtemp(prefix="mcai_sock_")
-    shm_path  = f"/dev/shm/mcai_shm_{uuid.uuid4().hex}.bin"
+    tmpdir    = tempfile.mkdtemp(prefix="mcgym_sock_")
+    shm_path  = f"/dev/shm/mcgym_shm_{uuid.uuid4().hex}.bin"
     sock_path = str(pathlib.Path(tmpdir) / "gym.sock")
 
     proc = launch(agents, seed, shm_path, sock_path)

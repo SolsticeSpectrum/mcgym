@@ -9,7 +9,7 @@ DRIVE=/drive2
 INIT=$DRIVE/mcgym-init  # written by the compose init service on every up
 SSH=$DRIVE/xgl-ssh      # dropbear host key + deb cache
 TOOLS=$DRIVE/tools      # rustup, cargo, venv, caches
-SRC=$DRIVE/mcai         # repo clone, no state inside
+SRC=$DRIVE/mcgym        # repo clone, no state inside
 RUNS=$DRIVE/runs        # checkpoints, outside the clone
 
 ssh_mode() {
