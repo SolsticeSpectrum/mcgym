@@ -9,10 +9,15 @@ import numpy as np
 class Task(ABC):
     """per gym instance, trackers are (N,) arrays over that gyms agents,
     a task owns everything that is not game physics and mechanics, reward,
-    shaping, episode length, terminal rules, the progress metric"""
+    shaping, episode length, terminal rules, the progress metric, plus the
+    gym boot config, worldgen by default, loaded map when world is set"""
 
     name:  str
     eplen: int
+
+    world:  str | None                          = None  # repo relative map dir
+    spawn:  tuple[float, float, float, float] | None = None  # x y z yaw on loaded maps
+    mining: bool                                = True
 
     def done(self, died: np.ndarray) -> np.ndarray:
         """terminal mask for this step, default is terminal on death"""

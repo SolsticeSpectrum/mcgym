@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 import threading
 import time
 
 READY = "SIM_TRANSPORT_READY"
+ROOT  = pathlib.Path(__file__).resolve().parents[3]
 
 
 def _drain(stream) -> None:
@@ -15,7 +17,8 @@ def _drain(stream) -> None:
         print(line, end="")
 
 
-def launch(agents: int, seed: int, shm: str, sock: str, timeout: float = 180.0) -> subprocess.Popen:
+def launch(agents: int, seed: int, shm: str, sock: str, timeout: float = 180.0,
+           world: str | None = None, spawn=None, mining: bool = True) -> subprocess.Popen:
     """start the sim and block until it prints the ready line"""
     binary = os.environ.get("SIM")
     if not binary:
@@ -29,13 +32,12 @@ def launch(agents: int, seed: int, shm: str, sock: str, timeout: float = 180.0) 
         "--seed", str(seed),
         "--spacing", os.environ.get("SIM_SPACING", "128"),
     ]
-    world = os.environ.get("SIM_WORLD")
     if world:
-        spawn = os.environ.get("SIM_SPAWN")
-        if not spawn:
-            raise RuntimeError("SIM_WORLD needs SIM_SPAWN as x,y,z,yaw")
-        cmd += ["--world", world, "--spawn", spawn,
-                "--mining", os.environ.get("SIM_MINING", "1")]
+        if spawn is None:
+            raise RuntimeError(f"task world {world} needs a spawn")
+        cmd += ["--world", str(ROOT / world),
+                "--spawn", ",".join(str(c) for c in spawn),
+                "--mining", str(int(mining))]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1)

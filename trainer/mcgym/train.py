@@ -19,9 +19,9 @@ from mcgym.ppo.buffer import Buffer
 from mcgym.ppo.learner import Learner
 from mcgym.schema import spec
 from mcgym.schema.registry import Registry
-from mcgym.tasks import wood
+from mcgym.tasks import parkour, wood
 
-TASKS = {"wood": wood.Wood}
+TASKS = {"wood": wood.Wood, "parkour": parkour.Parkour}
 
 REGISTRY = pathlib.Path(__file__).resolve().parents[2] / "schema" / "registry.json"
 EMA = 0.9

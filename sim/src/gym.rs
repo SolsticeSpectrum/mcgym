@@ -297,7 +297,16 @@ impl Sim {
 
 impl Gym for Sim {
     fn reset(&mut self, obs: &mut [u8]) {
-        // reset never teleports agents
+        // worldgen agents keep roaming across resets, fixed maps restart at spawn
+        if !self.roam {
+            for i in 0..self.n {
+                let (home, yaw) = self.homes[i];
+                self.teleport(i, home, yaw);
+                self.ref_xz[i]   = [home.x, home.z];
+                self.progress[i] = self.tick;
+            }
+            self.settle();
+        }
         self.tick = 0;
         self.write_all_obs(obs);
     }
