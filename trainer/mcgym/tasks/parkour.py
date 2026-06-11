@@ -20,6 +20,7 @@ W_DEATH  = 10.0    # fall damage kill, respawns at the pool
 # camera shaping as in wood, no jump term, parkour lives on the jump key
 W_CAMERA = 0.0006
 W_JERK   = 0.002
+W_SWING  = 0.001   # attack does nothing here, stop the arm flailing
 
 # signed degrees per camera bin so jerk catches direction reversals
 CAM = np.array([-10.0,  -3.0,   0.0,   3.0,  10.0], dtype=np.float32)
@@ -32,7 +33,7 @@ class Parkour(Task):
     eplen = 2048
 
     world  = "worlds/spiral"
-    spawn  = (38.5, -61.0, -63.5, 0.0)
+    spawn  = (100.5, -60.0, -59.5, 90.0)
     mining = False
 
     def __init__(self, agents: int, registry: Registry) -> None:
@@ -92,7 +93,7 @@ class Parkour(Task):
         pitch = CAM[act[:, 5]]
         jerk  = np.abs(yaw - self._yaw) + np.abs(pitch - self._pitch)
         vel   = np.abs(yaw) + np.abs(pitch)
-        r = r - W_CAMERA * vel - W_JERK * jerk
+        r = r - W_CAMERA * vel - W_JERK * jerk - W_SWING * act[:, 6]
 
         # zero the respawn frame, its cross episode delta is spurious, then
         # override the death frame with the penalty
