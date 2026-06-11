@@ -39,6 +39,7 @@ class Parkour(Task):
         self._dist    = None
         self._best    = None
         self._drop    = None
+        self._ground  = None
         self._success = np.zeros(agents, dtype=bool)
         self._yaw     = np.zeros(agents, dtype=np.float32)
         self._pitch   = np.zeros(agents, dtype=np.float32)
@@ -47,9 +48,10 @@ class Parkour(Task):
         return np.linalg.norm(obs["pos"] - GOAL[None, :], axis=1).astype(np.float32)
 
     def _rebase(self, mask, y, dist):
-        self._best[mask] = y[mask]
-        self._drop[mask] = 0.0
-        self._dist[mask] = dist[mask]
+        self._best[mask]   = y[mask]
+        self._drop[mask]   = 0.0
+        self._ground[mask] = y[mask]
+        self._dist[mask]   = dist[mask]
 
     def reset(self, obs: np.ndarray) -> None:
         y = obs["pos"][:, 1].astype(np.float32)
@@ -57,6 +59,7 @@ class Parkour(Task):
         self._dist       = self._gap(obs)
         self._best       = y.copy()
         self._drop       = np.zeros_like(y)
+        self._ground     = y.copy()
         self._success[:] = False
         self._yaw[:]     = 0.0
         self._pitch[:]   = 0.0
@@ -68,11 +71,13 @@ class Parkour(Task):
         dist = self._gap(obs)
         y    = obs["pos"][:, 1].astype(np.float32)
 
-        # drop = how far below the episode best, only fresh drop is punished,
-        # the climb back is not re paid because goal shaping is a potential
-        best = np.maximum(self._best, y)
-        drop = best - y
-        fall = np.maximum(drop - self._drop, 0.0)
+        # drop is measured on grounded height only so jump arcs cost nothing,
+        # only fresh drop is punished, the climb back is not re paid because
+        # goal shaping is a potential
+        ground = np.where(obs["on_ground"] == 1, y, self._ground).astype(np.float32)
+        best   = np.maximum(self._best, ground)
+        drop   = best - ground
+        fall   = np.maximum(drop - self._drop, 0.0)
 
         self._success = dist <= DONE_R
         r = (
@@ -95,9 +100,10 @@ class Parkour(Task):
         r[respawned] = 0.0
         r[died] = -W_DEATH
 
-        self._dist  = dist
-        self._best  = best
-        self._drop  = drop
+        self._dist   = dist
+        self._best   = best
+        self._drop   = drop
+        self._ground = ground
         self._yaw   = yaw.astype(np.float32)
         self._pitch = pitch.astype(np.float32)
         self._rebase(died | respawned, y, dist)

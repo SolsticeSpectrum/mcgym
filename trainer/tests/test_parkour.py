@@ -15,10 +15,11 @@ NOOP[:, 5] = 2
 ALIVE = np.zeros(1, dtype=bool)
 
 
-def obs(x, y, z):
-    o = np.zeros(1, dtype=np.dtype([("pos", "f4", 3), ("health", "f4")]))
-    o["pos"]    = [x, y, z]
-    o["health"] = 20.0
+def obs(x, y, z, ground=1):
+    o = np.zeros(1, dtype=np.dtype([("pos", "f4", 3), ("health", "f4"), ("on_ground", "u1")]))
+    o["pos"]       = [x, y, z]
+    o["health"]    = 20.0
+    o["on_ground"] = ground
     return o
 
 
@@ -75,6 +76,15 @@ def test_respawn_frame_is_zero():
     # trackers rebased at the pool, no phantom fall on the next step
     after = t.reward(obs(38.5, -61.0, -63.5), NOOP, ALIVE, ALIVE)
     assert np.isclose(after[0], -W_LOW)
+
+
+def test_jump_arc_is_free():
+    t = task()
+    up = t.reward(obs(38.5, -59.75, -63.5, ground=0), NOOP, ALIVE, ALIVE)  # apex
+    dn = t.reward(obs(38.5, -61.0, -63.5, ground=1), NOOP, ALIVE, ALIVE)   # landed where it started
+    # the apex pays goal shaping, the landing only gives it back, no fall on top
+    assert dn[0] > -(W_LOW + 1.5)
+    assert np.isclose(up[0] + dn[0], -2 * W_LOW, atol=1e-3)
 
 
 def test_metric_is_best_height():
